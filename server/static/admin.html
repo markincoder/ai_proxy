@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Админка — AI Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=5" />
+    <style>
+      .admin-shell {
+        max-width: 72rem;
+        margin: 0 auto;
+        padding: 0 1rem 2rem;
+      }
+      .admin-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin: 1rem 0;
+      }
+      .admin-tab {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        padding: 0.45rem 0.85rem;
+        border-radius: 0.5rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .admin-tab--active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .admin-panel[hidden] {
+        display: none !important;
+      }
+      .admin-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 0.65rem;
+      }
+      .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+      .admin-table th,
+      .admin-table td {
+        border-bottom: 1px solid var(--border);
+        padding: 0.45rem 0.55rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      .admin-table th {
+        background: var(--surface-2);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .admin-table tr:last-child td {
+        border-bottom: none;
+      }
+      .admin-table code {
+        font-size: 0.78rem;
+        word-break: break-all;
+      }
+      .admin-modal {
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0;
+        max-width: 36rem;
+        width: calc(100% - 2rem);
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.35);
+      }
+      .admin-modal::backdrop {
+        background: rgba(0, 0, 0, 0.45);
+      }
+      .admin-modal-inner {
+        padding: 1.1rem 1.25rem 1.25rem;
+      }
+      .admin-modal h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1.1rem;
+      }
+      .admin-field {
+        margin-bottom: 0.65rem;
+      }
+      .admin-field label {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+      .admin-field input[type="text"],
+      .admin-field input[type="number"],
+      .admin-field textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.4rem 0.5rem;
+        border-radius: 0.4rem;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      .admin-field textarea {
+        min-height: 4.5rem;
+        resize: vertical;
+      }
+      .admin-checks {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+        gap: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+      }
+      .admin-checks label {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .admin-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body class="page-tariffs">
+    <header class="top-nav" role="navigation" aria-label="Главное меню">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">AI</span>
+        <span>AI Proxy</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-link">Чат</a>
+        <a href="/tariffs" class="nav-link">Все модели</a>
+        <a href="/admin" class="nav-link active">Админка</a>
+      </nav>
+      <div class="nav-actions">
+        <button type="button" class="btn" id="btn-logout">Выйти</button>
+      </div>
+    </header>
+
+    <main class="main-shell admin-shell">
+      <h1 class="page-title">Администрирование</h1>
+      <p id="admin-gate" class="page-lead" style="display: none">
+        Нужны права администратора в базе (<code>users.is_admin = 1</code>). Сначала войдите через
+        <a href="/login">/login</a> (Яндекс или VK), затем выставьте флаг в БД для своего пользователя.
+      </p>
+
+      <div id="admin-app" style="display: none">
+        <p class="page-lead">
+          Редактирование карточек моделей в базе (описания, цены, флаги). Пользователи — просмотр балансов.
+        </p>
+
+        <div class="admin-tabs" role="tablist">
+          <button type="button" class="admin-tab admin-tab--active" data-tab="models" id="tab-models">Модели</button>
+          <button type="button" class="admin-tab" data-tab="users" id="tab-users">Пользователи</button>
+        </div>
+
+        <section id="panel-models" class="admin-panel">
+          <div id="models-err" class="err" style="display: none"></div>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="models-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Slug</th>
+                  <th>Цены ₽/1M</th>
+                  <th>Активна</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="models-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-users" class="admin-panel" hidden>
+          <div id="users-err" class="err" style="display: none"></div>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="users-table">
+              <thead>
+                <tr>
+                  <th>Телефон / имя</th>
+                  <th>Баланс</th>
+                  <th>ID</th>
+                  <th>Создан</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <dialog class="admin-modal" id="model-dialog" aria-labelledby="model-dialog-title">
+      <form class="admin-modal-inner" id="model-form">
+        <h2 id="model-dialog-title">Редактировать модель</h2>
+        <input type="hidden" id="mf-id" />
+        <div class="admin-field">
+          <label>Slug (только чтение)</label>
+          <input type="text" id="mf-slug" readonly />
+        </div>
+        <div class="admin-field">
+          <label for="mf-display">Отображаемое имя</label>
+          <input type="text" id="mf-display" required />
+        </div>
+        <div class="admin-field">
+          <label for="mf-provider">Провайдер</label>
+          <input type="text" id="mf-provider" />
+        </div>
+        <div class="admin-field">
+          <label for="mf-in">Вход, ₽ / 1M токенов</label>
+          <input type="text" id="mf-in" inputmode="decimal" />
+        </div>
+        <div class="admin-field">
+          <label for="mf-out">Выход, ₽ / 1M токенов</label>
+          <input type="text" id="mf-out" inputmode="decimal" />
+        </div>
+        <div class="admin-field">
+          <label for="mf-fixed">Фикс (опц.), ₽</label>
+          <input type="text" id="mf-fixed" inputmode="decimal" placeholder="пусто = нет" />
+        </div>
+        <div class="admin-checks">
+          <label><input type="checkbox" id="mf-active" /> Активна в каталоге</label>
+          <label><input type="checkbox" id="mf-free" /> Бесплатная (тариф)</label>
+          <label><input type="checkbox" id="mf-v" /> Vision</label>
+          <label><input type="checkbox" id="mf-img" /> Картинки в ответе</label>
+          <label><input type="checkbox" id="mf-mus" /> Музыка</label>
+          <label><input type="checkbox" id="mf-vid" /> Видео</label>
+          <label><input type="checkbox" id="mf-code" /> Код</label>
+        </div>
+        <div class="admin-field">
+          <label for="mf-desc">Описание (RU)</label>
+          <textarea id="mf-desc"></textarea>
+        </div>
+        <div class="admin-field">
+          <label for="mf-note">Примечание к тарифу (RU)</label>
+          <textarea id="mf-note"></textarea>
+        </div>
+        <div class="admin-actions">
+          <button type="submit" class="btn btn-primary">Сохранить</button>
+          <button type="button" class="btn" id="mf-cancel">Отмена</button>
+        </div>
+      </form>
+    </dialog>
+
+    <footer class="site-footer">AI Proxy · Админка</footer>
+
+    <script>
+      const api = (path, opts) => fetch(path, { credentials: "include", ...opts });
+
+      function esc(s) {
+        const d = document.createElement("div");
+        d.textContent = s == null ? "" : String(s);
+        return d.innerHTML;
+      }
+
+      async function gate() {
+        const r = await api("/api/auth/me");
+        const me = await r.json().catch(() => ({}));
+        if (!r.ok || me.guest || !me.isAdmin) {
+          document.getElementById("admin-gate").style.display = "block";
+          return false;
+        }
+        document.getElementById("admin-app").style.display = "block";
+        return true;
+      }
+
+      async function loadUsers() {
+        const err = document.getElementById("users-err");
+        err.style.display = "none";
+        const r = await api("/api/admin/users");
+        if (!r.ok) {
+          err.textContent = "Не удалось загрузить пользователей";
+          err.style.display = "block";
+          return;
+        }
+        const rows = await r.json();
+        const tb = document.getElementById("users-tbody");
+        tb.innerHTML = rows
+          .map((u) => {
+            const oauth = [u.vkUserId && `VK ${u.vkUserId}`, u.yandexUserId && `Яндекс ${u.yandexUserId}`]
+              .filter(Boolean)
+              .join(" · ");
+            const oauthLine = oauth
+              ? `<br/><span style="color:var(--muted);font-size:0.74rem">${esc(oauth)}</span>`
+              : "";
+            return `<tr>
+                <td>${esc(u.phone || "—")}<br/><span style="color:var(--muted);font-size:0.78rem">${esc(u.name || "")}</span>${oauthLine}</td>
+                <td>${esc(u.balance)} ₽</td>
+                <td><code>${esc(u.id)}</code></td>
+                <td>${esc(u.createdAt || "—")}</td>
+              </tr>`;
+          })
+          .join("");
+      }
+
+      let modelsCache = [];
+
+      function openEdit(m) {
+        document.getElementById("mf-id").value = m.id;
+        document.getElementById("mf-slug").value = m.slug;
+        document.getElementById("mf-display").value = m.displayName || "";
+        document.getElementById("mf-provider").value = m.provider || "";
+        document.getElementById("mf-in").value = m.inputPricePerMn ?? "";
+        document.getElementById("mf-out").value = m.outputPricePerMn ?? "";
+        document.getElementById("mf-fixed").value = m.fixedPrice != null ? m.fixedPrice : "";
+        document.getElementById("mf-active").checked = !!m.isActive;
+        document.getElementById("mf-free").checked = !!m.isFree;
+        document.getElementById("mf-v").checked = !!m.supportsVision;
+        document.getElementById("mf-img").checked = !!m.supportsImageGeneration;
+        document.getElementById("mf-mus").checked = !!m.supportsMusicGeneration;
+        document.getElementById("mf-vid").checked = !!m.supportsVideoGeneration;
+        document.getElementById("mf-code").checked = m.supportsCoding !== false;
+        document.getElementById("mf-desc").value = m.descriptionRu || "";
+        document.getElementById("mf-note").value = m.pricingNoteRu || "";
+        document.getElementById("model-dialog").showModal();
+      }
+
+      async function loadModels() {
+        const err = document.getElementById("models-err");
+        err.style.display = "none";
+        const r = await api("/api/admin/models");
+        if (!r.ok) {
+          err.textContent = "Не удалось загрузить модели";
+          err.style.display = "block";
+          return;
+        }
+        modelsCache = await r.json();
+        const tb = document.getElementById("models-tbody");
+        tb.innerHTML = modelsCache
+          .map((m) => {
+            const prices = `${esc(m.inputPricePerMn)} / ${esc(m.outputPricePerMn)}`;
+            return `<tr>
+              <td>${esc(m.displayName)}</td>
+              <td><code>${esc(m.slug)}</code></td>
+              <td>${prices}</td>
+              <td>${m.isActive ? "да" : "нет"}</td>
+              <td><button type="button" class="btn btn-primary" data-edit="${esc(m.id)}">Изменить</button></td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      document.getElementById("models-tbody").addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-edit]");
+        if (!b) return;
+        const id = b.getAttribute("data-edit");
+        const m = modelsCache.find((x) => x.id === id);
+        if (m) openEdit(m);
+      });
+
+      document.getElementById("model-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = document.getElementById("mf-id").value;
+        const fixedRaw = document.getElementById("mf-fixed").value.trim();
+        const body = {
+          displayName: document.getElementById("mf-display").value.trim(),
+          provider: document.getElementById("mf-provider").value.trim(),
+          inputPricePerMn: document.getElementById("mf-in").value.trim(),
+          outputPricePerMn: document.getElementById("mf-out").value.trim(),
+          fixedPrice: fixedRaw === "" ? null : fixedRaw,
+          isActive: document.getElementById("mf-active").checked,
+          isFree: document.getElementById("mf-free").checked,
+          supportsVision: document.getElementById("mf-v").checked,
+          supportsImageGeneration: document.getElementById("mf-img").checked,
+          supportsMusicGeneration: document.getElementById("mf-mus").checked,
+          supportsVideoGeneration: document.getElementById("mf-vid").checked,
+          supportsCoding: document.getElementById("mf-code").checked,
+          descriptionRu: document.getElementById("mf-desc").value.trim() || null,
+          pricingNoteRu: document.getElementById("mf-note").value.trim() || null,
+        };
+        const r = await api(`/api/admin/models/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          alert("Ошибка сохранения: " + t);
+          return;
+        }
+        document.getElementById("model-dialog").close();
+        await loadModels();
+      });
+
+      document.getElementById("mf-cancel").onclick = () => document.getElementById("model-dialog").close();
+
+      document.querySelectorAll(".admin-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const tab = btn.dataset.tab;
+          document.querySelectorAll(".admin-tab").forEach((b) => {
+            b.classList.toggle("admin-tab--active", b.dataset.tab === tab);
+          });
+          document.getElementById("panel-models").hidden = tab !== "models";
+          document.getElementById("panel-users").hidden = tab !== "users";
+        });
+      });
+
+      document.getElementById("btn-logout").onclick = async () => {
+        await api("/api/auth/logout", { method: "POST" });
+        location.href = "/login";
+      };
+
+      (async () => {
+        const ok = await gate();
+        if (!ok) return;
+        await loadModels();
+        await loadUsers();
+      })();
+    </script>
+  </body>
+</html>

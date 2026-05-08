@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Чат — AI Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=10" />
+    <link
+      rel="stylesheet"
+      href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
+    />
+  </head>
+  <body class="page-chat">
+    <header class="top-nav" role="navigation" aria-label="Главное меню">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">AI</span>
+        <span>AI Proxy</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-link active">Чат</a>
+        <a href="/tariffs" class="nav-link">Все модели</a>
+        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
+      </nav>
+      <div class="nav-actions">
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">
+          Выйти
+        </button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <aside class="chat-sidebar" id="chat-sidebar" aria-label="История чатов">
+        <button type="button" class="sidebar-new-chat" id="btn-new-chat">
+          <span class="sidebar-new-icon" aria-hidden="true">✎</span>
+          Новый чат
+        </button>
+        <div class="sidebar-section-label">Недавние</div>
+        <ul class="sidebar-thread-list" id="thread-list" role="list"></ul>
+      </aside>
+      <div class="app-main-column">
+        <main class="main-shell main-shell--chat">
+          <h1 class="page-title">Чат с нейросетями</h1>
+          <p class="page-lead">
+            Выберите модель и напишите запрос. История сохраняется — можно вернуться к прошлым диалогам слева.
+          </p>
+
+          <div class="chat-shell">
+            <div
+              id="model-picker"
+              class="model-picker"
+              role="radiogroup"
+              aria-label="Выбор модели"
+            ></div>
+            <div id="err" class="err" style="display: none"></div>
+            <div class="chat-area" id="messages"></div>
+            <form id="chat-form" class="composer" autocomplete="off">
+              <input type="text" id="msg-input" placeholder="Напишите сообщение…" />
+              <input type="file" id="file-input" accept="image/*" hidden />
+              <button type="button" class="btn" id="btn-attach" title="Прикрепить изображение">📎</button>
+              <button type="submit" class="btn btn-primary">Отправить</button>
+            </form>
+
+            <div id="video-panel" class="video-panel" style="display: none">
+              <p class="hint" style="margin: 0 0 0.75rem">
+                <strong>Видео</strong> — отдельный запрос OpenRouter (долго). Поле чата скрыто. Результат в плеере ниже.
+              </p>
+              <div class="input-row" style="margin: 0; padding: 0; border: none">
+                <input type="text" id="video-prompt" placeholder="Опишите сцену для ролика…" style="flex: 1" />
+                <button type="button" class="btn btn-primary" id="btn-video">Создать видео</button>
+              </div>
+              <p id="video-status" class="hint" style="margin-top: 0.65rem; min-height: 1.25rem"></p>
+              <pre id="video-debug" class="video-debug" aria-live="polite"></pre>
+              <video
+                id="video-player"
+                controls
+                playsinline
+                preload="metadata"
+                style="display: none; width: 100%; max-height: 24rem; border-radius: 0.75rem; border: 1px solid var(--border)"
+              ></video>
+            </div>
+          </div>
+
+          <p id="img-gen-hint" class="hint footer-hint" style="display: none">
+            Модель с <strong>генерацией изображений</strong> — в чате создаётся <strong>статичная картинка</strong>, даже если в
+            запросе написано «видео». Настоящее видео — выберите Veo / Seedance / Sora в списке моделей.
+          </p>
+          <p class="hint footer-hint">
+            Бесплатные модели работают без входа; для платных нужен аккаунт и баланс. История чатов — после
+            входа.
+          </p>
+        </main>
+      </div>
+    </div>
+
+    <div
+      id="pay-modal"
+      class="pay-modal"
+      hidden
+      role="presentation"
+      aria-hidden="true"
+    >
+      <div class="pay-modal__backdrop" data-pay-modal-close tabindex="-1"></div>
+      <div
+        class="pay-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pay-modal-title"
+      >
+        <button
+          type="button"
+          class="pay-modal__close"
+          data-pay-modal-close
+          aria-label="Закрыть"
+        >
+          ×
+        </button>
+        <h2 id="pay-modal-title" class="pay-modal__title">Пополнение баланса</h2>
+        <p id="pay-modal-err" class="pay-modal__err" style="display: none"></p>
+        <form
+            id="yookassa-simple-form"
+            class="yoomoney-payment-form"
+            action="https://yookassa.ru/integration/simplepay/payment"
+            method="post"
+            accept-charset="utf-8"
+          >
+            <div class="ym-products ym-display-none">
+              <div class="ym-block-title ym-products-title">Товары</div>
+              <div class="ym-product">
+                <div class="ym-product-line">
+                  <span class="ym-product-description"
+                    ><span class="ym-product-count">1×</span>Пополнение счёта</span
+                  >
+                  <span
+                    class="ym-product-price"
+                    data-price="0"
+                    data-id="984"
+                    data-count="1"
+                    >0,00&nbsp;₽</span
+                  >
+                </div>
+                <input type="hidden" name="text" value="Пополнение счёта" />
+                <input type="hidden" name="price" value="0" />
+                <input type="hidden" name="quantity" value="1" />
+                <input type="hidden" name="paymentSubjectType" value="service" />
+                <input type="hidden" name="paymentMethodType" value="full_prepayment" />
+                <input type="hidden" name="tax" value="1" />
+              </div>
+            </div>
+            <input type="hidden" name="ym_merchant_receipt" value="" />
+            <div class="ym-customer-info">
+              <div class="ym-block-title">О покупателе</div>
+              <input
+                name="cps_email"
+                class="ym-input ym-required-input"
+                placeholder="Email"
+                type="text"
+                value=""
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="ym-hidden-inputs">
+              <input name="shopSuccessURL" type="hidden" value="" />
+              <input name="shopFailURL" type="hidden" value="" />
+            </div>
+            <input name="customerNumber" type="hidden" value="" />
+            <input name="sumEqualPrice" type="hidden" value="true" />
+            <div class="ym-payment-btn-block ym-before-line ym-align-space-between">
+              <div class="ym-input-icon-rub">
+                <input
+                  name="sum"
+                  placeholder="0.00"
+                  class="ym-input ym-sum-input ym-required-input"
+                  type="number"
+                  step="any"
+                />
+              </div>
+              <button
+                data-text="Заплатить"
+                class="ym-btn-pay ym-result-price"
+                type="submit"
+              >
+                <span class="ym-text-crop">Заплатить</span>
+                <span class="ym-price-output"></span>
+              </button>
+              <img
+                src="https://yookassa.ru/integration/simplepay/img/iokassa-gray.svg?v=1.34.0"
+                class="ym-logo"
+                width="114"
+                height="27"
+                alt="ЮKassa"
+              />
+            </div>
+            <input name="shopId" type="hidden" value="" />
+          </form>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="module" src="/static/js/chat.js?v=32"></script>
+    <script>
+      document.getElementById("btn-attach").onclick = () =>
+        document.getElementById("file-input").click();
+    </script>
+  </body>
+</html>

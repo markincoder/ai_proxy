@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Модели и тарифы — AI Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=5" />
+  </head>
+  <body class="page-tariffs">
+    <header class="top-nav" role="navigation" aria-label="Главное меню">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">AI</span>
+        <span>AI Proxy</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-link">Чат</a>
+        <a href="/tariffs" class="nav-link active">Все модели</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="/" class="btn">К чату</a>
+        <a href="/login" class="btn btn-primary" id="nav-login-tariffs" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout-tariffs" title="Завершить сессию">
+          Выйти
+        </button>
+      </div>
+    </header>
+
+    <main class="main-shell layout-wide page-tariffs-main">
+      <h1 class="page-title">Все модели и тарифы</h1>
+      <p class="page-lead">
+        Разбивка по типам. Текстовые модели — в основном по токенам (вход / выход за 1M). Видео, картинки в чате и аудио
+        имеют отдельную логику у OpenRouter; подробности в карточке.
+      </p>
+
+      <div class="tariffs-tabs" role="tablist" aria-label="Категории моделей" id="tariffs-tablist"></div>
+      <div id="tariffs-panels"></div>
+    </main>
+
+    <footer class="site-footer">AI Proxy · OpenRouter</footer>
+
+    <script>
+      const MODEL_GROUPS = [
+        { id: "free", emoji: "🎁", title: "Бесплатные" },
+        { id: "text", emoji: "💬", title: "Текст и чат" },
+        { id: "image", emoji: "🖼", title: "Изображения в чате" },
+        { id: "video", emoji: "🎬", title: "Видео" },
+        { id: "music", emoji: "🎵", title: "Музыка и аудио" },
+      ];
+
+      function modelGroupId(m) {
+        if (m.isFree === true) return "free";
+        if (m.supportsVideoGeneration) return "video";
+        if (m.supportsImageGeneration) return "image";
+        if (m.supportsMusicGeneration) return "music";
+        return "text";
+      }
+
+      function billingBadge(m) {
+        const c = m.capabilities || {};
+        if (c.free) return "Бесплатно";
+        if (c.videoGeneration) return "Видео (сек., разреш., звук)";
+        if (c.imageGeneration) return "Картинка в чате (токены)";
+        if (c.musicGeneration) return "Аудио / музыка";
+        return "Текст (токены)";
+      }
+
+      function renderPricingBlock(m) {
+        let html = "";
+        if (m.pricingNoteRu) {
+          html += `<div class="tariff-pricing-note" role="note">${escape(m.pricingNoteRu)}</div>`;
+        }
+        if (m.isFree) {
+          html +=
+            '<p class="tariff-price-line"><strong>0 ₽</strong> — бесплатный канал OpenRouter.</p>';
+          return html;
+        }
+        html += `
+          <ul class="tariff-token-prices">
+            <li>Вход: ${fmt(m.inputPricePerMn)} ₽ / 1M токенов</li>
+            <li>Выход: ${fmt(m.outputPricePerMn)} ₽ / 1M токенов</li>
+            ${m.fixedPrice != null ? `<li>Фикс (редко для чата): ${fmt(m.fixedPrice)} ₽</li>` : ""}
+          </ul>
+        `;
+        if (m.capabilities?.videoGeneration) {
+          html +=
+            '<p class="tariff-price-hint">Видео: итоговая сумма зависит от длительности, разрешения и опций (звук и т.д.), не только от таблицы токенов.</p>';
+        } else if (
+          m.capabilities?.imageGeneration &&
+          !m.pricingNoteRu
+        ) {
+          html +=
+            '<p class="tariff-price-hint">Картинка в ответе увеличивает выходные токены по сравнению с чистым текстом.</p>';
+        } else if (
+          !m.pricingNoteRu &&
+          !m.capabilities?.imageGeneration &&
+          !m.capabilities?.musicGeneration
+        ) {
+          html +=
+            '<p class="tariff-price-hint">В текстовом чате списание по фактическому количеству токенов.</p>';
+        }
+        return html;
+      }
+
+      function escape(s) {
+        const d = document.createElement("div");
+        d.textContent = s == null ? "" : String(s);
+        return d.innerHTML;
+      }
+
+      function fmt(x) {
+        return Number(x).toLocaleString("ru-RU", { maximumFractionDigits: 4 });
+      }
+
+      function yn(v) {
+        return v ? "да" : "нет";
+      }
+
+      fetch("/api/models")
+        .then((r) => r.json())
+        .then((models) => {
+          const buckets = { free: [], text: [], image: [], video: [], music: [] };
+          for (const m of models) {
+            buckets[modelGroupId(m)].push(m);
+          }
+          for (const k of Object.keys(buckets)) {
+            buckets[k].sort((a, b) =>
+              String(a.displayName).localeCompare(String(b.displayName), "ru"),
+            );
+          }
+
+          const groups = MODEL_GROUPS.filter((g) => buckets[g.id].length > 0);
+          const tablist = document.getElementById("tariffs-tablist");
+          const panelsRoot = document.getElementById("tariffs-panels");
+          tablist.innerHTML = "";
+          panelsRoot.innerHTML = "";
+
+          groups.forEach((g, i) => {
+            const tab = document.createElement("button");
+            tab.type = "button";
+            tab.className = "tariffs-tab" + (i === 0 ? " tariffs-tab--active" : "");
+            tab.setAttribute("role", "tab");
+            tab.setAttribute("aria-selected", i === 0 ? "true" : "false");
+            tab.setAttribute("aria-controls", `tariff-panel-${g.id}`);
+            tab.id = `tariff-tab-${g.id}`;
+            tab.dataset.group = g.id;
+            tab.innerHTML = `<span class="tariffs-tab-emoji" aria-hidden="true">${g.emoji}</span><span>${escape(g.title)}</span>`;
+            tablist.appendChild(tab);
+
+            const panel = document.createElement("div");
+            panel.className = "tariffs-panel";
+            panel.id = `tariff-panel-${g.id}`;
+            panel.setAttribute("role", "tabpanel");
+            panel.setAttribute("aria-labelledby", `tariff-tab-${g.id}`);
+            panel.hidden = i !== 0;
+            panel.dataset.group = g.id;
+
+            const grid = document.createElement("div");
+            grid.className = "tariffs-grid";
+
+            for (const m of buckets[g.id]) {
+              const art = document.createElement("article");
+              art.className = "card tariff-card";
+              const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
+              art.innerHTML = `
+                <div class="tariff-card-head">
+                  <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
+                  <span class="tariff-billing-badge">${escape(billingBadge(m))}</span>
+                </div>
+                <div class="tariff-meta">${escape(m.provider)} · <code>${escape(m.slug)}</code></div>
+                ${
+                  m.descriptionRu
+                    ? `<p class="tariff-desc">${escape(m.descriptionRu)}</p>`
+                    : ""
+                }
+                ${renderPricingBlock(m)}
+                <p class="tariff-caps-title">Возможности</p>
+                <ul class="tariff-caps">
+                  <li>Vision (вход): ${yn(m.capabilities?.visionInput)}</li>
+                  <li>Картинки в ответе: ${yn(m.capabilities?.imageGeneration)}</li>
+                  <li>Музыка: ${yn(m.capabilities?.musicGeneration)}</li>
+                  <li>Видео: ${yn(m.capabilities?.videoGeneration)}</li>
+                  <li>Код: ${yn(m.capabilities?.coding)}</li>
+                </ul>
+                <a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>
+              `;
+              grid.appendChild(art);
+            }
+            panel.appendChild(grid);
+            panelsRoot.appendChild(panel);
+          });
+
+          function activateTab(gid) {
+            tablist.querySelectorAll(".tariffs-tab").forEach((t) => {
+              const on = t.dataset.group === gid;
+              t.classList.toggle("tariffs-tab--active", on);
+              t.setAttribute("aria-selected", on ? "true" : "false");
+            });
+            panelsRoot.querySelectorAll(".tariffs-panel").forEach((p) => {
+              p.hidden = p.dataset.group !== gid;
+            });
+          }
+
+          tablist.addEventListener("click", (e) => {
+            const btn = e.target.closest(".tariffs-tab");
+            if (!btn || !tablist.contains(btn)) return;
+            const gid = btn.dataset.group;
+            if (gid) activateTab(gid);
+          });
+
+          const MODEL_KEY = "ai_proxy_model_slug";
+          const EXPLICIT_KEY = "ai_proxy_explicit_model";
+          function rememberModelChoice(slug) {
+            if (!slug) return;
+            try {
+              sessionStorage.setItem(MODEL_KEY, slug);
+              sessionStorage.setItem(EXPLICIT_KEY, "1");
+            } catch {
+              /* ignore */
+            }
+          }
+          panelsRoot.addEventListener("click", (e) => {
+            const a = e.target.closest("a.tariff-open-chat");
+            if (a && panelsRoot.contains(a)) {
+              const slug = a.dataset.slug;
+              rememberModelChoice(slug);
+              return;
+            }
+            const art = e.target.closest("article.tariff-card");
+            if (!art || !panelsRoot.contains(art)) return;
+            const link = art.querySelector("a.tariff-open-chat");
+            if (!link) return;
+            e.preventDefault();
+            const slug = link.dataset.slug;
+            rememberModelChoice(slug);
+            location.href = link.href;
+          });
+        })
+        .catch((e) => {
+          console.error(e);
+          document.getElementById("tariffs-panels").innerHTML =
+            '<p class="err" style="display:block">Не удалось загрузить модели.</p>';
+        });
+    </script>
+    <script>
+      (function () {
+        const loginEl = document.getElementById("nav-login-tariffs");
+        const outEl = document.getElementById("btn-logout-tariffs");
+        fetch("/api/auth/me", { credentials: "include" })
+          .then((r) => r.json())
+          .then((me) => {
+            if (me.guest) {
+              if (loginEl) loginEl.style.removeProperty("display");
+              if (outEl) outEl.style.display = "none";
+            } else {
+              if (loginEl) loginEl.style.display = "none";
+              if (outEl) outEl.style.removeProperty("display");
+            }
+            try {
+              const next = encodeURIComponent(location.pathname + location.search);
+              if (loginEl) loginEl.href = "/login?next=" + next;
+            } catch {
+              /* ignore */
+            }
+          })
+          .catch(() => {
+            if (loginEl) loginEl.style.removeProperty("display");
+            if (outEl) outEl.style.display = "none";
+          });
+      })();
+    </script>
+    <script>
+      document.getElementById("btn-logout-tariffs").onclick = async () => {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+        location.href = "/login";
+      };
+    </script>
+  </body>
+</html>

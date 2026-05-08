@@ -1,0 +1,87 @@
+from contextlib import asynccontextmanager
+import json
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
+from .config import get_settings
+from .database import init_db
+from .routers import admin as admin_router
+from .routers import auth, chat, conversations, meta, models_list, oauth, payments, video_jobs
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="AI Proxy", lifespan=lifespan)
+    s = get_settings()
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=s.session_secret,
+        max_age=14 * 24 * 3600,
+        same_site="lax",
+        https_only=False,
+    )
+
+    app.include_router(auth.router)
+    app.include_router(oauth.router)
+    app.include_router(chat.router)
+    app.include_router(conversations.router)
+    app.include_router(models_list.router)
+    app.include_router(meta.router)
+    app.include_router(payments.router)
+    app.include_router(video_jobs.router)
+    app.include_router(admin_router.router)
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @app.get("/.well-known/appspecific/com.chrome.devtools.json")
+    def chrome_devtools_wellknown():
+        """Chrome DevTools иногда запрашивает этот URL; без маршрута в логах лишний 404."""
+        return {}
+
+    @app.get("/")
+    def index():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/login")
+    def login_page():
+        """Подставляет флаги OAuth в HTML: fetch('/api/config') через ngrok часто не JSON."""
+        s = get_settings()
+        raw = (STATIC_DIR / "login.html").read_text(encoding="utf-8")
+        boot = {
+            "oauthYandex": s.yandex_oauth_configured,
+            "oauthVk": s.vk_oauth_configured,
+        }
+        if s.vk_oauth_configured:
+            boot["publicAppUrl"] = s.public_app_url.rstrip("/")
+            boot["vkOneTapAppName"] = s.vk_id_widget_app_name.strip() or s.openrouter_app_title
+            try:
+                boot["vkAppId"] = int(s.vk_oauth_client_id.strip())
+            except ValueError:
+                boot["vkAppId"] = None
+        snippet = f"<script>window.__LOGIN_BOOT__={json.dumps(boot)};</script>"
+        html = raw.replace("</head>", snippet + "</head>", 1)
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    @app.get("/tariffs")
+    def tariffs_page():
+        return FileResponse(STATIC_DIR / "tariffs.html")
+
+    @app.get("/admin")
+    def admin_page():
+        return FileResponse(STATIC_DIR / "admin.html")
+
+    return app
+
+
+app = create_app()
