@@ -25,6 +25,8 @@ def _serialize_model(m: AiModel) -> dict:
         "supportsImageGeneration": m.supports_image_generation,
         "supportsMusicGeneration": m.supports_music_generation,
         "supportsVideoGeneration": m.supports_video_generation,
+        "supportsSpeech": m.supports_speech,
+        "supportsTranscription": m.supports_transcription,
         "supportsCoding": m.supports_coding,
         "isFree": m.is_free,
         "descriptionRu": m.description_ru,
@@ -68,6 +70,8 @@ class AdminModelPatch(BaseModel):
     supports_image_generation: Optional[bool] = Field(None, alias="supportsImageGeneration")
     supports_music_generation: Optional[bool] = Field(None, alias="supportsMusicGeneration")
     supports_video_generation: Optional[bool] = Field(None, alias="supportsVideoGeneration")
+    supports_speech: Optional[bool] = Field(None, alias="supportsSpeech")
+    supports_transcription: Optional[bool] = Field(None, alias="supportsTranscription")
     supports_coding: Optional[bool] = Field(None, alias="supportsCoding")
     is_free: Optional[bool] = Field(None, alias="isFree")
     description_ru: Optional[str] = Field(None, alias="descriptionRu")

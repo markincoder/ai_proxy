@@ -44,13 +44,22 @@
         { id: "text", emoji: "💬", title: "Текст и чат" },
         { id: "image", emoji: "🖼", title: "Изображения в чате" },
         { id: "video", emoji: "🎬", title: "Видео" },
-        { id: "music", emoji: "🎵", title: "Музыка и аудио" },
+        { id: "transcription", emoji: "📝", title: "Транскрипция" },
+        { id: "speech", emoji: "🎙️", title: "Речь в чате" },
+        { id: "music", emoji: "🎵", title: "Музыка" },
       ];
 
       function modelGroupId(m) {
         if (m.isFree === true) return "free";
         if (m.supportsVideoGeneration) return "video";
         if (m.supportsImageGeneration) return "image";
+        if (m.supportsTranscription) return "transcription";
+        if (m.supportsSpeech && m.supportsMusicGeneration) {
+          const s = String(m.slug || "");
+          if (s.includes("lyria")) return "music";
+          return "speech";
+        }
+        if (m.supportsSpeech) return "speech";
         if (m.supportsMusicGeneration) return "music";
         return "text";
       }
@@ -60,7 +69,9 @@
         if (c.free) return "Бесплатно";
         if (c.videoGeneration) return "Видео (сек., разреш., звук)";
         if (c.imageGeneration) return "Картинка в чате (токены)";
-        if (c.musicGeneration) return "Аудио / музыка";
+        if (c.transcription) return "Транскрипция (отдельный API)";
+        if (c.speech) return "Речь / аудио в чате";
+        if (c.musicGeneration) return "Музыка";
         return "Текст (токены)";
       }
 
@@ -93,10 +104,16 @@
         } else if (
           !m.pricingNoteRu &&
           !m.capabilities?.imageGeneration &&
-          !m.capabilities?.musicGeneration
+          !m.capabilities?.musicGeneration &&
+          !m.capabilities?.speech &&
+          !m.capabilities?.transcription
         ) {
           html +=
             '<p class="tariff-price-hint">В текстовом чате списание по фактическому количеству токенов.</p>';
+        }
+        if (m.capabilities?.transcription && !m.isFree) {
+          html +=
+            '<p class="tariff-price-hint">Транскрипция: не chat completions, тариф у провайдера за аудио (см. OpenRouter).</p>';
         }
         return html;
       }
@@ -118,7 +135,7 @@
       fetch("/api/models")
         .then((r) => r.json())
         .then((models) => {
-          const buckets = { free: [], text: [], image: [], video: [], music: [] };
+          const buckets = { free: [], text: [], image: [], video: [], transcription: [], speech: [], music: [] };
           for (const m of models) {
             buckets[modelGroupId(m)].push(m);
           }
@@ -161,6 +178,16 @@
               const art = document.createElement("article");
               art.className = "card tariff-card";
               const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
+              const sttOnly =
+                m.capabilities?.transcription &&
+                !m.capabilities?.speech &&
+                !m.capabilities?.musicGeneration &&
+                !m.capabilities?.imageGeneration &&
+                !m.capabilities?.videoGeneration &&
+                !m.isFree;
+              const chatFooter = sttOnly
+                ? '<p class="tariff-price-hint">Не для списка моделей чата: endpoint <code>/audio/transcriptions</code>; голосовой ввод в приложении идёт через сервер.</p>'
+                : `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>`;
               art.innerHTML = `
                 <div class="tariff-card-head">
                   <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
@@ -177,11 +204,13 @@
                 <ul class="tariff-caps">
                   <li>Vision (вход): ${yn(m.capabilities?.visionInput)}</li>
                   <li>Картинки в ответе: ${yn(m.capabilities?.imageGeneration)}</li>
+                  <li>Видео (генерация): ${yn(m.capabilities?.videoGeneration)}</li>
+                  <li>Транскрипция: ${yn(m.capabilities?.transcription)}</li>
+                  <li>Речь в чате: ${yn(m.capabilities?.speech)}</li>
                   <li>Музыка: ${yn(m.capabilities?.musicGeneration)}</li>
-                  <li>Видео: ${yn(m.capabilities?.videoGeneration)}</li>
                   <li>Код: ${yn(m.capabilities?.coding)}</li>
                 </ul>
-                <a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>
+                ${chatFooter}
               `;
               grid.appendChild(art);
             }

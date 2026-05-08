@@ -34,5 +34,5 @@ def me(request: Request, db: Session = Depends(get_db)):
         "phone": user.phone,
         "balance": str(user.balance),
         "yookassa_enabled": get_settings().yookassa_enabled,
-        "isAdmin": bool(user.is_admin),
+        "isAdmin": user.is_admin == 1,
     }

@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import types as sqltypes
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import get_settings
@@ -47,6 +48,8 @@ def _caps(
     image_gen: bool = False,
     music: bool = False,
     video: bool = False,
+    speech: bool = False,
+    transcription: bool = False,
     code: bool = True,
 ) -> dict[str, bool]:
     """Возможности для сидов: vision=анализ чужих картинок на входе; image_gen=создание картинок."""
@@ -55,6 +58,8 @@ def _caps(
         "supports_image_generation": image_gen,
         "supports_music_generation": music,
         "supports_video_generation": video,
+        "supports_speech": speech,
+        "supports_transcription": transcription,
         "supports_coding": code,
     }
 
@@ -77,6 +82,54 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         "fixed_price": None,
         "is_free": True,
         **_caps(vision=True),
+    },
+    {
+        "slug": "meta-llama/llama-3.3-70b-instruct:free",
+        "display_name": "Llama 3.3 70B Instruct (free)",
+        "provider": "Meta",
+        "description_ru": "Открытая Llama 3.3 70B на бесплатном канале OpenRouter (очередь и лимиты провайдера).",
+        "pricing_note_ru": "0 ₽. Качество и доступность зависят от загрузки :free.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        "is_free": True,
+        **_caps(),
+    },
+    {
+        "slug": "google/gemma-4-31b-it:free",
+        "display_name": "Gemma 4 31B IT (free)",
+        "provider": "Google",
+        "description_ru": "Gemma 4 31B instruction-tuned; бесплатный endpoint OpenRouter.",
+        "pricing_note_ru": "0 ₽. Бесплатный канал.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        "is_free": True,
+        **_caps(),
+    },
+    {
+        "slug": "qwen/qwen3-coder:free",
+        "display_name": "Qwen3 Coder (free)",
+        "provider": "Qwen",
+        "description_ru": "Qwen3 Coder на :free — код и технические задачи без платы за токены.",
+        "pricing_note_ru": "0 ₽. :free канал.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        "is_free": True,
+        **_caps(vision=False, code=True),
+    },
+    {
+        "slug": "openai/gpt-oss-20b:free",
+        "display_name": "GPT-OSS 20B (free)",
+        "provider": "OpenAI",
+        "description_ru": "Компактная открытая модель OpenAI в бесплатном режиме маршрутизации OpenRouter.",
+        "pricing_note_ru": "0 ₽. :free канал.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        "is_free": True,
+        **_caps(),
     },
     {
         "slug": "openai/gpt-5.4",
@@ -205,6 +258,86 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         **_caps(image_gen=True),
     },
     {
+        "slug": "openai/gpt-5.4-image-2",
+        "display_name": "GPT-5.4 Image 2",
+        "provider": "OpenAI",
+        "description_ru": "Флагманское изображение в ответе чата (OpenRouter; актуальный image‑модельный ряд GPT‑5.4).",
+        "pricing_note_ru": "Как у других image‑чатов: выход с картинкой сильно влияет на списание; цифры — ориентир по API × курс × наценка.",
+        "input_price_per_mn": Decimal("2400"),
+        "output_price_per_mn": Decimal("4500"),
+        "fixed_price": None,
+        **_caps(image_gen=True),
+    },
+    {
+        "slug": "google/gemini-3.1-flash-image-preview",
+        "display_name": "Gemini 3.1 Flash Image",
+        "provider": "Google",
+        "description_ru": "Быстрая генерация и правка картинок в диалоге (предпросмотр Gemini 3.1).",
+        "pricing_note_ru": "Image в чате: списание по токенам; ориентир ниже из каталога OpenRouter.",
+        "input_price_per_mn": Decimal("150"),
+        "output_price_per_mn": Decimal("900"),
+        "fixed_price": None,
+        **_caps(image_gen=True),
+    },
+    {
+        "slug": "kwaivgi/kling-v3.0-pro",
+        "display_name": "Kling Video 3.0 Pro",
+        "provider": "Kwaivgi",
+        "description_ru": "Премиальное видео по тексту или картинке (OpenRouter Video API): качество выше Standard.",
+        "pricing_note_ru": (
+            "Отдельный API `POST /videos`: итог в ₽ зависит от длительности, разрешения и опций (не от ₽/1M в таблице). "
+            "Цифры ниже — условный ориентир; сверяйте с ответом job после генерации."
+        ),
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, video=True, code=False),
+    },
+    {
+        "slug": "kwaivgi/kling-v3.0-std",
+        "display_name": "Kling Video 3.0 Standard",
+        "provider": "Kwaivgi",
+        "description_ru": "Kling 3.0 стандартный уровень: текст/картинка → видео через OpenRouter.",
+        "pricing_note_ru": "Видео API — оплата по факту job; таблица токенов не применяется напрямую.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, video=True, code=False),
+    },
+    {
+        "slug": "google/veo-3.1-fast",
+        "display_name": "Veo 3.1 Fast",
+        "provider": "Google",
+        "description_ru": "Быстрая генерация видео Veo 3.1 в OpenRouter (качество/скорость баланс Fast).",
+        "pricing_note_ru": "Видео: см. usage.cost в job; не текстовые токены чата.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, video=True, code=False),
+    },
+    {
+        "slug": "minimax/hailuo-2.3",
+        "display_name": "MiniMax Hailuo 2.3",
+        "provider": "MiniMax",
+        "description_ru": "Hailuo 2.3 — видео по промпту (MiniMax на OpenRouter Video).",
+        "pricing_note_ru": "Видео API; ориентир по фактическому job.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, video=True, code=False),
+    },
+    {
+        "slug": "alibaba/wan-2.7",
+        "display_name": "Wan 2.7",
+        "provider": "Alibaba",
+        "description_ru": "Alibaba Wan 2.7 — текст/референс → видео в OpenRouter.",
+        "pricing_note_ru": "Видео API; тариф по результату job.",
+        "input_price_per_mn": Decimal("0"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, video=True, code=False),
+    },
+    {
         "slug": "deepseek/deepseek-v3.2",
         "display_name": "DeepSeek V3.2",
         "provider": "DeepSeek",
@@ -266,7 +399,7 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         "input_price_per_mn": Decimal("750"),
         "output_price_per_mn": Decimal("3000"),
         "fixed_price": None,
-        **_caps(vision=False, music=True, code=True),
+        **_caps(vision=False, speech=True, music=True, code=True),
     },
     {
         "slug": "openai/gpt-audio-mini",
@@ -280,7 +413,7 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         "input_price_per_mn": Decimal("180"),
         "output_price_per_mn": Decimal("720"),
         "fixed_price": None,
-        **_caps(vision=False, music=True, code=True),
+        **_caps(vision=False, speech=True, music=True, code=True),
     },
     {
         "slug": "openai/gpt-4o-audio-preview",
@@ -294,7 +427,29 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         "input_price_per_mn": Decimal("750"),
         "output_price_per_mn": Decimal("3000"),
         "fixed_price": None,
-        **_caps(vision=False, music=True, code=True),
+        **_caps(vision=False, speech=True, music=True, code=True),
+    },
+    {
+        "slug": "mistralai/voxtral-small-24b-2507",
+        "display_name": "Voxtral Small 24B",
+        "provider": "Mistral",
+        "description_ru": "Модель с уклоном в голос: аудио на входе, ответ текстом (мультимодальная речь в чате).",
+        "pricing_note_ru": "Ориентир ₽/1M из каталога OpenRouter; голос увеличивает «эквивалент» входных токенов.",
+        "input_price_per_mn": Decimal("30"),
+        "output_price_per_mn": Decimal("90"),
+        "fixed_price": None,
+        **_caps(vision=False, speech=True, code=True),
+    },
+    {
+        "slug": "google/gemini-2.5-flash-lite",
+        "display_name": "Gemini 2.5 Flash Lite",
+        "provider": "Google",
+        "description_ru": "Лёгкий Flash: текст, картинки, файл, аудио и видео на входе — ответ текстом; удобно для голосовых и мультимодальных сценариев.",
+        "pricing_note_ru": "Аудио/видео на входе считаются по тарифам Gemini в OpenRouter.",
+        "input_price_per_mn": Decimal("30"),
+        "output_price_per_mn": Decimal("120"),
+        "fixed_price": None,
+        **_caps(vision=True, speech=True, code=True),
     },
     {
         "slug": "google/lyria-3-pro-preview",
@@ -323,6 +478,111 @@ DEFAULT_MODEL_SPECS: list[dict[str, object]] = [
         "output_price_per_mn": Decimal("4500"),
         "fixed_price": Decimal("22"),
         **_caps(vision=False, music=True, code=True),
+    },
+    {
+        "slug": "anthropic/claude-haiku-4.5",
+        "display_name": "Claude Haiku 4.5 (музыка в чате)",
+        "provider": "Anthropic",
+        "description_ru": "Быстрый Claude для **текстовой** работы с музыкой: тексты песен, аранжировки словами, разбор жанров (без аудиовыхода).",
+        "pricing_note_ru": "Те же токены chat completions, что у обычного Haiku; в категории «Музыка» для удобства подборки.",
+        "input_price_per_mn": Decimal("300"),
+        "output_price_per_mn": Decimal("1500"),
+        "fixed_price": None,
+        **_caps(vision=False, music=True, code=True),
+    },
+    {
+        "slug": "openai/gpt-4o-mini",
+        "display_name": "GPT-4o mini (музыка в чате)",
+        "provider": "OpenAI",
+        "description_ru": "Компактный GPT‑4o: сценарии, битбокс-текстом, описание звука, структура трека (**только текст**).",
+        "pricing_note_ru": "Оплата как у обычного gpt-4o-mini в чате.",
+        "input_price_per_mn": Decimal("45"),
+        "output_price_per_mn": Decimal("180"),
+        "fixed_price": None,
+        **_caps(vision=True, music=True, code=True),
+    },
+    {
+        "slug": "mistralai/mistral-small-3.2-24b-instruct",
+        "display_name": "Mistral Small 3.2 (музыка в чате)",
+        "provider": "Mistral",
+        "description_ru": "Небольшая Mistral для текстовых музыкальных задач: промпты для Lyria, куплеты, метафоры (**без генерации аудио**).",
+        "pricing_note_ru": "Токены чата; ориентир из OpenRouter.",
+        "input_price_per_mn": Decimal("22.5"),
+        "output_price_per_mn": Decimal("60"),
+        "fixed_price": None,
+        **_caps(vision=False, music=True, code=True),
+    },
+    {
+        "slug": "openai/whisper-1",
+        "display_name": "Whisper (транскрипция)",
+        "provider": "OpenAI",
+        "description_ru": (
+            "Распознавание речи в текст через API OpenRouter (`/audio/transcriptions`). "
+            "Голосовой ввод в чате на сервере по умолчанию использует этот slug."
+        ),
+        "pricing_note_ru": (
+            "Endpoint транскрипции: единицы оплаты у провайдера могут отличаться от «токенов чата». "
+            "Ниже — грубый ориентир; уточняйте в кабинете OpenRouter."
+        ),
+        "input_price_per_mn": Decimal("90"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
+    },
+    {
+        "slug": "openai/gpt-4o-transcribe",
+        "display_name": "GPT-4o Transcribe",
+        "provider": "OpenAI",
+        "description_ru": "Высококачественная транскрипция через `/audio/transcriptions` (модальность transcription в OpenRouter).",
+        "pricing_note_ru": "Стоимость по правилам STT в OpenRouter; ориентир по token-подобным полям pricing.",
+        "input_price_per_mn": Decimal("750"),
+        "output_price_per_mn": Decimal("3000"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
+    },
+    {
+        "slug": "openai/gpt-4o-mini-transcribe",
+        "display_name": "GPT-4o mini Transcribe",
+        "provider": "OpenAI",
+        "description_ru": "Более экономичная транскрипция на базе GPT‑4o mini (тот же API транскрипций).",
+        "pricing_note_ru": "STT endpoint; ориентир из каталога OpenRouter.",
+        "input_price_per_mn": Decimal("375"),
+        "output_price_per_mn": Decimal("1500"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
+    },
+    {
+        "slug": "openai/whisper-large-v3",
+        "display_name": "Whisper Large v3",
+        "provider": "OpenAI",
+        "description_ru": "Whisper Large v3 — максимальное качество распознавания (transcription API).",
+        "pricing_note_ru": "В каталоге OpenRouter для STT часто указывается не «$ за 1M токенов чата»; сверяйте расценки.",
+        "input_price_per_mn": Decimal("120"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
+    },
+    {
+        "slug": "openai/whisper-large-v3-turbo",
+        "display_name": "Whisper Large v3 Turbo",
+        "provider": "OpenAI",
+        "description_ru": "Ускоренный Whisper Large v3 для длинных файлов.",
+        "pricing_note_ru": "STT; детали тарифа — в OpenRouter.",
+        "input_price_per_mn": Decimal("80"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
+    },
+    {
+        "slug": "google/chirp-3",
+        "display_name": "Google Chirp 3 (транскрипция)",
+        "provider": "Google",
+        "description_ru": "Google Chirp 3 для распознавания речи через OpenRouter transcription.",
+        "pricing_note_ru": "Тариф STT от Google в OpenRouter; цифры — ориентир.",
+        "input_price_per_mn": Decimal("150"),
+        "output_price_per_mn": Decimal("0"),
+        "fixed_price": None,
+        **_caps(vision=False, transcription=True, code=False),
     },
     {
         "slug": "minimax/minimax-m2",
@@ -392,6 +652,8 @@ def _migrate_ai_model_columns(engine) -> None:
         ("supports_image_generation", False),
         ("supports_music_generation", False),
         ("supports_video_generation", False),
+        ("supports_speech", False),
+        ("supports_transcription", False),
         ("supports_coding", True),
         ("is_free", False),
     ]
@@ -415,7 +677,6 @@ def _migrate_user_oauth_columns(engine) -> None:
     insp = inspect(engine)
     if not insp.has_table("users"):
         return
-    dialect = engine.dialect.name
     cols = {c["name"] for c in insp.get_columns("users")}
     with engine.begin() as conn:
         if "vk_user_id" not in cols:
@@ -423,10 +684,7 @@ def _migrate_user_oauth_columns(engine) -> None:
         if "yandex_user_id" not in cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN yandex_user_id VARCHAR(64)"))
         if "is_admin" not in cols:
-            if dialect == "sqlite":
-                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
-            else:
-                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT false"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0"))
 
     insp = inspect(engine)
     idx_names = {ix["name"] for ix in insp.get_indexes("users")}
@@ -439,6 +697,40 @@ def _migrate_user_oauth_columns(engine) -> None:
             conn.execute(
                 text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_yandex_user_id ON users (yandex_user_id)")
             )
+
+
+def _migrate_user_is_admin_to_integer(engine) -> None:
+    """PostgreSQL: старая колонка BOOLEAN → INTEGER 0/1. SQLite уже хранит числа."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    if engine.dialect.name != "postgresql":
+        return
+    col = next((c for c in insp.get_columns("users") if c["name"] == "is_admin"), None)
+    if not col or not isinstance(col["type"], sqltypes.Boolean):
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ALTER COLUMN is_admin DROP DEFAULT"))
+        conn.execute(
+            text(
+                "ALTER TABLE users ALTER COLUMN is_admin TYPE INTEGER USING (COALESCE(is_admin::integer, 0))"
+            )
+        )
+        conn.execute(text("ALTER TABLE users ALTER COLUMN is_admin SET DEFAULT 0"))
+
+
+def _normalize_user_is_admin_to_01(engine) -> None:
+    """Только 0 и 1: прочие значения и NULL приводим к 0."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE users SET is_admin = 0 WHERE is_admin IS NULL "
+                "OR (is_admin <> 0 AND is_admin <> 1)"
+            )
+        )
 
 
 def _sync_model_capabilities_from_specs(db: Session) -> None:
@@ -455,6 +747,8 @@ def _sync_model_capabilities_from_specs(db: Session) -> None:
         row.supports_image_generation = bool(s["supports_image_generation"])
         row.supports_music_generation = bool(s["supports_music_generation"])
         row.supports_video_generation = bool(s["supports_video_generation"])
+        row.supports_speech = bool(s.get("supports_speech", False))
+        row.supports_transcription = bool(s.get("supports_transcription", False))
         row.supports_coding = bool(s["supports_coding"])
 
 
@@ -495,6 +789,8 @@ def _merge_legacy_free_models_into_openrouter(db: Session) -> None:
         keep.supports_image_generation = bool(spec["supports_image_generation"])
         keep.supports_music_generation = bool(spec["supports_music_generation"])
         keep.supports_video_generation = bool(spec["supports_video_generation"])
+        keep.supports_speech = bool(spec.get("supports_speech", False))
+        keep.supports_transcription = bool(spec.get("supports_transcription", False))
         keep.supports_coding = bool(spec["supports_coding"])
         dr = spec.get("description_ru")
         keep.description_ru = str(dr) if dr is not None else None
@@ -571,6 +867,8 @@ def _ensure_default_models(db: Session) -> None:
                 supports_image_generation=bool(s["supports_image_generation"]),
                 supports_music_generation=bool(s["supports_music_generation"]),
                 supports_video_generation=bool(s["supports_video_generation"]),
+                supports_speech=bool(s.get("supports_speech", False)),
+                supports_transcription=bool(s.get("supports_transcription", False)),
                 supports_coding=bool(s["supports_coding"]),
                 is_free=bool(s.get("is_free", False)),
                 description_ru=str(s["description_ru"])
@@ -604,6 +902,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _migrate_ai_model_columns(engine)
     _migrate_user_oauth_columns(engine)
+    _migrate_user_is_admin_to_integer(engine)
+    _normalize_user_is_admin_to_01(engine)
     with SessionLocal() as db:
         if db.query(AiModel).count() == 0:
             seed_models(db)
@@ -631,6 +931,8 @@ def seed_models(db: Session) -> None:
                 supports_image_generation=bool(s["supports_image_generation"]),
                 supports_music_generation=bool(s["supports_music_generation"]),
                 supports_video_generation=bool(s["supports_video_generation"]),
+                supports_speech=bool(s.get("supports_speech", False)),
+                supports_transcription=bool(s.get("supports_transcription", False)),
                 supports_coding=bool(s["supports_coding"]),
                 is_free=bool(s.get("is_free", False)),
                 description_ru=str(s["description_ru"])

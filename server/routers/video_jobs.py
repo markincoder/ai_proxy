@@ -19,8 +19,9 @@ from ..services.spend import assert_positive_balance, record_spend
 
 router = APIRouter(prefix="/api/v1/video", tags=["video"])
 
-# job_id OpenRouter → user_id (один воркер; при рестарте списание по завершении может не выполниться)
+# job_id OpenRouter → владелец и флаг бесплатной модели (in-memory; после рестарта воркера может не сработать)
 _job_owners: dict[str, str] = {}
+_job_free: dict[str, bool] = {}
 _charged_jobs: set[str] = set()
 
 # Ориентир: usage.cost у OpenRouter в USD; баланс в приложении в ₽.
@@ -38,7 +39,16 @@ def _usd_to_rub(usd: Any) -> Decimal:
     return Decimal(str(usd)) * _VIDEO_USD_TO_RUB
 
 
-def _maybe_record_video_spend(db, user_id: str | None, job_id: str, data: dict[str, Any]) -> None:
+def _maybe_record_video_spend(
+    db,
+    user_id: str | None,
+    job_id: str,
+    data: dict[str, Any],
+    *,
+    model_is_free: bool = False,
+) -> None:
+    if model_is_free:
+        return
     if not user_id:
         return
     if job_id in _charged_jobs:
@@ -62,10 +72,12 @@ def _maybe_record_video_spend(db, user_id: str | None, job_id: str, data: dict[s
 async def create_video_job(request: Request, body: CreateVideoJobBody):
     from ..database import SessionLocal
 
+    model_is_free = False
     with SessionLocal() as db:
         m = db.query(AiModel).filter(AiModel.slug == body.model_slug, AiModel.is_active.is_(True)).first()
         if not m or not m.supports_video_generation:
             raise HTTPException(status_code=400, detail="Not a video model")
+        model_is_free = bool(m.is_free)
         if m.is_free:
             user_id = resolve_user_id(request, db)
         else:
@@ -92,6 +104,7 @@ async def create_video_job(request: Request, body: CreateVideoJobBody):
     jid = data.get("id")
     if isinstance(jid, str) and user_id:
         _job_owners[jid] = user_id
+        _job_free[jid] = model_is_free
 
     return data
 
@@ -117,7 +130,13 @@ async def get_video_job(request: Request, job_id: str):
                 raise HTTPException(status_code=403, detail="Forbidden")
         uid = user_id or owner
         if uid and data.get("status") == "completed":
-            _maybe_record_video_spend(db, uid, job_id, data)
+            _maybe_record_video_spend(
+                db,
+                uid,
+                job_id,
+                data,
+                model_is_free=bool(_job_free.get(job_id)),
+            )
 
     return data
 

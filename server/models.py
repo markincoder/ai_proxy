@@ -6,9 +6,11 @@ from typing import Any, Optional
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -22,6 +24,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin_01"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     phone: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True)
@@ -30,7 +33,7 @@ class User(Base):
     yandex_user_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_admin: Mapped[int] = mapped_column(Integer, default=0)
 
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
     payment_orders: Mapped[list["PaymentOrder"]] = relationship(back_populates="user")
@@ -56,6 +59,10 @@ class AiModel(Base):
     supports_image_generation: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_music_generation: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_video_generation: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ответы с аудио/речью в чате (GPT Audio и т.п.), не обязательно музыка.
+    supports_speech: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Распознавание речи (endpoint /audio/transcriptions в OpenRouter), не chat completions.
+    supports_transcription: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_coding: Mapped[bool] = mapped_column(Boolean, default=True)
     # Тариф OpenRouter :free — показываем в категории «Бесплатные», цены в БД 0.
     is_free: Mapped[bool] = mapped_column(Boolean, default=False)

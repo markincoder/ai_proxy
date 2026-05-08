@@ -147,7 +147,7 @@
     <main class="main-shell admin-shell">
       <h1 class="page-title">Администрирование</h1>
       <p id="admin-gate" class="page-lead" style="display: none">
-        Нужны права администратора в базе (<code>users.is_admin = 1</code>). Сначала войдите через
+        Нужны права администратора в базе: в таблице <code>users</code> выставьте <code>is_admin = 1</code> (допустимы только <code>0</code> и <code>1</code>). Сначала войдите через
         <a href="/login">/login</a> (Яндекс или VK), затем выставьте флаг в БД для своего пользователя.
       </p>
 
@@ -233,6 +233,8 @@
           <label><input type="checkbox" id="mf-img" /> Картинки в ответе</label>
           <label><input type="checkbox" id="mf-mus" /> Музыка</label>
           <label><input type="checkbox" id="mf-vid" /> Видео</label>
+          <label><input type="checkbox" id="mf-sp" /> Речь в чате</label>
+          <label><input type="checkbox" id="mf-tr" /> Транскрипция</label>
           <label><input type="checkbox" id="mf-code" /> Код</label>
         </div>
         <div class="admin-field">
@@ -317,6 +319,8 @@
         document.getElementById("mf-img").checked = !!m.supportsImageGeneration;
         document.getElementById("mf-mus").checked = !!m.supportsMusicGeneration;
         document.getElementById("mf-vid").checked = !!m.supportsVideoGeneration;
+        document.getElementById("mf-sp").checked = !!m.supportsSpeech;
+        document.getElementById("mf-tr").checked = !!m.supportsTranscription;
         document.getElementById("mf-code").checked = m.supportsCoding !== false;
         document.getElementById("mf-desc").value = m.descriptionRu || "";
         document.getElementById("mf-note").value = m.pricingNoteRu || "";
@@ -372,6 +376,8 @@
           supportsImageGeneration: document.getElementById("mf-img").checked,
           supportsMusicGeneration: document.getElementById("mf-mus").checked,
           supportsVideoGeneration: document.getElementById("mf-vid").checked,
+          supportsSpeech: document.getElementById("mf-sp").checked,
+          supportsTranscription: document.getElementById("mf-tr").checked,
           supportsCoding: document.getElementById("mf-code").checked,
           descriptionRu: document.getElementById("mf-desc").value.trim() || null,
           pricingNoteRu: document.getElementById("mf-note").value.trim() || null,

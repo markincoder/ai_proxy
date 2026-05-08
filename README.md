@@ -85,7 +85,7 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 
 ### Администраторы
 
-Права админки (`/admin`, `/api/admin/*`) задаются только полем **`users.is_admin`** в базе. Войдите через OAuth, возьмите **`id`** из ответа `GET /api/auth/me` (или из таблицы `users`) и выполните:
+Права админки (`/admin`, `/api/admin/*`) задаются полем **`users.is_admin`**: только **`0`** (нет) или **`1`** (админ). Войдите через OAuth, возьмите **`id`** из ответа `GET /api/auth/me` (или из таблицы `users`) и выполните:
 
 ```sql
 UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
@@ -139,4 +139,6 @@ python scripts/sync_openrouter_prices.py
 
 `--dry-run` — только печать без записи в БД. Модели **без** числового token pricing в API (часть видео, исчезнувшие slug) в скрипте пропускаются — для них цены в `server/database.py` заданы вручную как ориентир.
 
-**Видео (Veo, Sora, Seedance)** и устаревшие slug без маршрутизации в OpenRouter удаляются при старте (`_REMOVED_OPENROUTER_SLUGS` в `server/database.py`). **Аудио / музыка** в чате: модели OpenRouter с выходом `audio` — **openai/gpt-audio**, **gpt-audio-mini**, **gpt-4o-audio-preview**, **google/lyria-3-*** (ориентиры цен в сидах; у Lyria в API часто нет token pricing — см. `pricing_note`). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок: **FLUX** заменены на **openai/gpt-5-image** и **google/gemini-3-pro-image-preview**.
+В каталоге и админке у каждой строки `ai_models` задаются флаги типа: **видео** (отдельный API `POST /videos`), **транскрипция** (`/audio/transcriptions`, в чате не выбирается), **речь в чате** (модели с аудиовыходом в completions), **музыка** (например Lyria). Чат и тарифы группируют карточки по этим признакам.
+
+**Видео (Veo, Sora, Seedance)** и устаревшие slug без маршрутизации в OpenRouter удаляются при старте (`_REMOVED_OPENROUTER_SLUGS` в `server/database.py`). **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**, **gpt-4o-audio-preview**. **Музыка:** **google/lyria-3-***. **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок: **FLUX** заменены на **openai/gpt-5-image** и **google/gemini-3-pro-image-preview**.

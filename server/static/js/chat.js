@@ -95,11 +95,33 @@ function renderMd(html) {
   return escapeHtml(html).replace(/\n/g, "<br>");
 }
 
-/** Группа модели для сетки: бесплатные > видео > изображения > музыка > текст */
+/** Только транскрипция (endpoint /audio/transcriptions) — не в списке моделей чата. */
+function isChatSelectableModel(m) {
+  if (
+    m.supportsTranscription === true &&
+    m.supportsSpeech !== true &&
+    m.supportsMusicGeneration !== true &&
+    m.supportsImageGeneration !== true &&
+    m.supportsVideoGeneration !== true &&
+    m.isFree !== true
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Группа модели для сетки: бесплатные > видео > изображения > транскрипция > речь > музыка > текст */
 function modelGroupId(m) {
   if (m.isFree === true) return "free";
   if (m.supportsVideoGeneration) return "video";
   if (m.supportsImageGeneration) return "image";
+  if (m.supportsTranscription) return "transcription";
+  if (m.supportsSpeech && m.supportsMusicGeneration) {
+    const s = String(m.slug || "");
+    if (s.includes("lyria")) return "music";
+    return "speech";
+  }
+  if (m.supportsSpeech) return "speech";
   if (m.supportsMusicGeneration) return "music";
   return "text";
 }
@@ -109,6 +131,8 @@ const MODEL_GROUPS = [
   { id: "text", emoji: "💬", title: "Текст и чат" },
   { id: "image", emoji: "🖼", title: "Изображения" },
   { id: "video", emoji: "🎬", title: "Видео" },
+  { id: "transcription", emoji: "📝", title: "Транскрипция" },
+  { id: "speech", emoji: "🎙️", title: "Речь в чате" },
   { id: "music", emoji: "🎵", title: "Музыка" },
 ];
 
@@ -185,6 +209,7 @@ async function main() {
 
   const cfg = await api("/api/config").then((r) => r.json());
   const models = await api("/api/models").then((r) => r.json());
+  const chatModels = models.filter(isChatSelectableModel);
 
   const balanceEl = document.getElementById("balance");
   const modelPickerEl = document.getElementById("model-picker");
@@ -432,14 +457,14 @@ async function main() {
     /* ignore */
   }
 
-  let selectedSlug = models[0]?.slug ?? "";
+  let selectedSlug = chatModels[0]?.slug ?? "";
   /** true: не открывать последний чат при старте — уважать ?model= или выбор с тарифов. */
   let honorExplicitModelChoice = false;
   /* Сначала ?model= (переход с /tariffs), иначе последний выбор из сессии. */
   try {
     const qp = new URLSearchParams(window.location.search);
     const qModel = qp.get("model");
-    if (qModel && models.some((x) => x.slug === qModel)) {
+    if (qModel && chatModels.some((x) => x.slug === qModel)) {
       selectedSlug = qModel;
       sessionStorage.setItem(MODEL_STORAGE_KEY, qModel);
       honorExplicitModelChoice = true;
@@ -449,7 +474,7 @@ async function main() {
       history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : "") + u.hash);
     } else {
       const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
-      if (savedSlug && models.some((x) => x.slug === savedSlug)) {
+      if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
         selectedSlug = savedSlug;
       }
       if (sessionStorage.getItem(MODEL_EXPLICIT_CHOICE_KEY) === "1") {
@@ -471,7 +496,7 @@ async function main() {
       btn.classList.toggle("model-card--selected", on);
       btn.setAttribute("aria-checked", on ? "true" : "false");
     });
-    const sel = models.find((x) => x.slug === slug);
+    const sel = chatModels.find((x) => x.slug === slug);
     if (sel) activateModelTab(modelGroupId(sel));
     const cards = modelPickerEl.querySelectorAll(".model-card");
     let picked = null;
@@ -497,7 +522,7 @@ async function main() {
   }
 
   function setSelectedSlug(slug) {
-    if (!models.some((x) => x.slug === slug)) return;
+    if (!chatModels.some((x) => x.slug === slug)) return;
     selectedSlug = slug;
     sessionStorage.setItem(MODEL_STORAGE_KEY, slug);
     selectModelVisual(slug);
@@ -505,8 +530,8 @@ async function main() {
   }
 
   if (modelPickerEl) {
-    const buckets = { free: [], text: [], image: [], video: [], music: [] };
-    for (const m of models) {
+    const buckets = { free: [], text: [], image: [], video: [], transcription: [], speech: [], music: [] };
+    for (const m of chatModels) {
       buckets[modelGroupId(m)].push(m);
     }
     for (const k of Object.keys(buckets)) {
@@ -529,7 +554,7 @@ async function main() {
       panelWrap.className = "model-tab-panels";
 
       const initialGid = (() => {
-        const sm = models.find((x) => x.slug === selectedSlug);
+        const sm = chatModels.find((x) => x.slug === selectedSlug);
         if (sm) return modelGroupId(sm);
         return groupsWithModels[0].id;
       })();
@@ -726,7 +751,7 @@ async function main() {
   const history = [];
 
   function selectedModel() {
-    const found = models.find((x) => x.slug === selectedSlug);
+    const found = chatModels.find((x) => x.slug === selectedSlug);
     if (found) return found;
     if (selectedSlug) {
       console.warn(
@@ -734,7 +759,7 @@ async function main() {
         selectedSlug,
       );
     }
-    return models[0] ?? null;
+    return chatModels[0] ?? null;
   }
 
   updateHints();
@@ -935,7 +960,7 @@ async function main() {
     for (const m of t.messages || []) {
       history.push(m);
     }
-    if (t.modelSlug && models.some((x) => x.slug === t.modelSlug)) {
+    if (t.modelSlug && chatModels.some((x) => x.slug === t.modelSlug)) {
       setSelectedSlug(t.modelSlug);
     }
     renderChatFromHistory();
@@ -1001,7 +1026,7 @@ async function main() {
   }
 
   async function selectModelPick(slug) {
-    if (!models.some((x) => x.slug === slug)) return;
+    if (!chatModels.some((x) => x.slug === slug)) return;
     if (slug === selectedSlug) return;
     await abandonOrPersistCurrent();
     selectedSlug = slug;

@@ -53,11 +53,11 @@ def require_admin(
     request: Request,
     db: Session = Depends(get_db),
 ) -> str:
-    """Доступ к /api/admin/*: пользователь в сессии с users.is_admin = true."""
+    """Доступ к /api/admin/*: пользователь в сессии с users.is_admin = 1."""
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401, detail="Unauthorized")
     user = db.query(User).filter(User.id == uid).first()
-    if not user or not user.is_admin:
+    if not user or user.is_admin != 1:
         raise HTTPException(status_code=403, detail="Admin only")
     return uid

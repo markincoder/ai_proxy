@@ -34,7 +34,7 @@ def estimate_min_spend_rub(model: AiModel, messages: list[dict[str, Any]]) -> De
     inp_tokens = max(int(total_chars / 4) + image_parts * _VISION_IMAGE_TOKEN_BUDGET, 100)
     if model.supports_image_generation:
         out_n = _OUTPUT_RESERVE_IMAGE_GEN
-    elif model.supports_music_generation:
+    elif model.supports_music_generation or model.supports_speech:
         out_n = _OUTPUT_RESERVE_MUSIC
     else:
         out_n = _OUTPUT_RESERVE_TOKENS
@@ -50,6 +50,8 @@ def compute_spend_rub(
     model: AiModel,
     usage: Optional[dict[str, Any]],
 ) -> Decimal:
+    if model.is_free:
+        return Decimal("0")
     u = usage or {}
     inp = int(u.get("prompt_tokens") or 0)
     out = int(u.get("completion_tokens") or 0)

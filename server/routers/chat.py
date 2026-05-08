@@ -1,5 +1,4 @@
 import json
-from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
 import httpx
@@ -56,14 +55,6 @@ def merge_usage_line(line: str, prev: dict[str, Any]) -> dict[str, Any]:
         return n
     except json.JSONDecodeError:
         return prev
-
-
-def _model_billing(ns: AiModel) -> Any:
-    return SimpleNamespace(
-        input_price_per_mn=ns.input_price_per_mn,
-        output_price_per_mn=ns.output_price_per_mn,
-        fixed_price=ns.fixed_price,
-    )
 
 
 def _sse_upstream_error(message: str) -> bytes:
@@ -172,8 +163,6 @@ async def _handle_chat_json(
     user_id: str | None,
     model: AiModel,
 ) -> StreamingResponse | JSONResponse:
-    bill = _model_billing(model)
-
     payload: dict[str, Any] = {
         "model": body.model_slug,
         "messages": [m.model_dump() for m in body.messages],
@@ -200,7 +189,7 @@ async def _handle_chat_json(
             )
         data = upstream.json()
         usage = data.get("usage")
-        cost = compute_spend_rub(bill, usage)
+        cost = compute_spend_rub(model, usage)
         if user_id:
             with SessionLocal() as db:
                 record_spend(
@@ -247,7 +236,7 @@ async def _handle_chat_json(
             )
             return
 
-        cost = compute_spend_rub(bill, state.get("usage"))
+        cost = compute_spend_rub(model, state.get("usage"))
         if user_id:
             with SessionLocal() as db:
                 record_spend(
