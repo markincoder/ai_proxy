@@ -24,16 +24,21 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin_01"),)
+    __table_args__ = (
+        CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin_01"),
+        CheckConstraint("is_blocked IN (0, 1)", name="ck_users_is_blocked_01"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    phone: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True)
-    phone_verified: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     vk_user_id: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True)
     yandex_user_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
     is_admin: Mapped[int] = mapped_column(Integer, default=0)
+    is_blocked: Mapped[int] = mapped_column(Integer, default=0)
+    # Последняя выбранная в чате модель (slug из ai_models); синхронизируется с клиентом.
+    last_chat_model_slug: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
     payment_orders: Mapped[list["PaymentOrder"]] = relationship(back_populates="user")
@@ -92,6 +97,31 @@ class ChatThread(Base):
     user: Mapped["User"] = relationship(back_populates="chat_threads")
 
 
+class SiteBanner(Base):
+    """Системное объявление (техработы): одна строка id=1."""
+
+    __tablename__ = "site_banner"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    schedule_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ErrorLog(Base):
+    """Неперехваченные исключения HTTP-запросов для просмотра админом."""
+
+    __tablename__ = "error_logs"
+    __table_args__ = (Index("ix_error_logs_created_at", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    context: Mapped[str] = mapped_column(Text)
+    error_type: Mapped[str] = mapped_column(String(512))
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    traceback: Mapped[str] = mapped_column(Text)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (Index("ix_transactions_user_created", "user_id", "created_at"),)
@@ -123,3 +153,37 @@ class PaymentOrder(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="payment_orders")
+
+
+class NewsPost(Base):
+    """Новости для страницы /news (дата, заголовок, опционально картинка URL, текст)."""
+
+    __tablename__ = "news_posts"
+    __table_args__ = (Index("ix_news_posts_published_at", "published_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    title: Mapped[str] = mapped_column(String(512))
+    image_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserApiKey(Base):
+    """Ключ доступа к HTTP API (OpenRouter через прокси); в БД только хэш."""
+
+    __tablename__ = "user_api_keys"
+    __table_args__ = (
+        Index("ix_user_api_keys_user_id", "user_id"),
+        Index("ix_user_api_keys_key_hash", "key_hash", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"))
+    label: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    key_hash: Mapped[str] = mapped_column(String(64))
+    key_prefix: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

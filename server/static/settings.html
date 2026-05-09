@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Настройки — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=48" />
+  </head>
+  <body class="page-account">
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
+    <header class="top-nav" role="navigation" aria-label="Главное меню">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/news" class="nav-link">Новости</a>
+        <a href="/" class="nav-link">Чат</a>
+        <a href="/tariffs" class="nav-link">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link active">Настройки</a>
+        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
+      </nav>
+      <div class="nav-actions">
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
+      </div>
+    </header>
+
+    <main class="main-shell layout-wide page-account-main">
+      <h1 class="page-title">Настройки</h1>
+      <p id="account-user-summary" class="account-user-summary" style="display: none" aria-live="polite"></p>
+      <p id="account-blocked-msg" class="account-blocked-banner" style="display: none" role="alert"></p>
+      <p id="account-guest-only" class="login-oauth-miss" style="display: none">
+        Выполните вход, чтобы открыть настройки профиля и звука.
+      </p>
+
+      <div id="account-content" class="account-content" style="display: none">
+        <div class="settings-tabs-wrap">
+          <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
+            <button
+              type="button"
+              class="settings-tab settings-tab--active"
+              role="tab"
+              id="tab-auth"
+              data-panel="panel-auth"
+              aria-selected="true"
+              aria-controls="panel-auth"
+              tabindex="0"
+            >
+              <span class="settings-tab__icon" aria-hidden="true">🔐</span>
+              <span class="settings-tab__label">Авторизация</span>
+            </button>
+            <button
+              type="button"
+              class="settings-tab"
+              role="tab"
+              id="tab-sound"
+              data-panel="panel-sound"
+              aria-selected="false"
+              aria-controls="panel-sound"
+              tabindex="-1"
+            >
+              <span class="settings-tab__icon" aria-hidden="true">🔊</span>
+              <span class="settings-tab__label">Звук</span>
+            </button>
+          </div>
+
+          <div class="settings-tab-panels">
+            <div
+              id="panel-auth"
+              class="settings-tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-auth"
+            >
+        <form id="form-account" class="account-form-max">
+            <h3 class="account-subsection-title" id="h-username">Логин</h3>
+            <p id="username-locked-block" class="account-lead" style="display: none">
+              Текущий логин: <strong id="username-display"></strong>. Изменить логин нельзя — он задаётся один раз.
+            </p>
+            <div id="username-editable-wrap" class="login-form login-form--aligned" style="display: none">
+              <p class="account-lead">
+                Задайте логин и пароль — оба поля обязательны; сохраняются одной кнопкой ниже (логин потом изменить нельзя).
+                Имя проверяем на занятость.
+              </p>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Логин</span>
+                <div class="login-field-control">
+                  <input
+                    id="set-username-input"
+                    name="username"
+                    type="text"
+                    minlength="3"
+                    maxlength="32"
+                    autocomplete="username"
+                    pattern="[a-zA-Z0-9_.\-]{3,32}"
+                    title="Латиница, цифры, _ - ."
+                  />
+                  <p id="set-username-hint" class="login-field-hint" style="display: none"></p>
+                </div>
+              </label>
+            </div>
+
+            <h3 class="account-subsection-title" id="h-password">Пароль</h3>
+            <div class="login-form login-form--aligned">
+              <p id="password-lead-has" class="account-lead" style="display: none">
+                Новый пароль введите дважды одинаково. Чтобы сменить пароль, укажите также текущий пароль.
+              </p>
+              <p id="password-lead-first" class="account-lead" style="display: none">
+                Вместе с логином выше задайте пароль и повтор — одна кнопка «Сохранить».
+              </p>
+              <p id="password-warn-need-username" class="account-hint-warn" style="display: none">
+                Пока логин не задан, заполните и логин, и новый пароль с повтором — иначе сохранить нельзя.
+              </p>
+              <label class="login-field login-field--grid" id="row-current-password">
+                <span class="login-field-label">Текущий</span>
+                <input
+                  id="fld-current-password"
+                  name="currentPassword"
+                  type="password"
+                  autocomplete="current-password"
+                  minlength="1"
+                  maxlength="256"
+                />
+              </label>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Новый пароль</span>
+                <input
+                  id="fld-new-password"
+                  name="newPassword"
+                  type="password"
+                  minlength="8"
+                  maxlength="128"
+                  autocomplete="new-password"
+                />
+              </label>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Повтор</span>
+                <input
+                  id="fld-new-password-repeat"
+                  name="newPasswordRepeat"
+                  type="password"
+                  minlength="8"
+                  maxlength="128"
+                  autocomplete="new-password"
+                />
+              </label>
+            </div>
+
+          <p id="account-msg" class="login-local-msg" style="display: none" role="alert"></p>
+          <button type="submit" class="btn btn-primary login-submit" id="btn-save-account">Сохранить</button>
+        </form>
+            </div>
+
+            <div
+              id="panel-sound"
+              class="settings-tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-sound"
+              hidden
+            >
+          <div class="login-form login-form--aligned" style="display: block; padding: 0; margin: 0; border: none">
+            <h3 class="account-subsection-title" id="h-stt">Распознавание речи (STT)</h3>
+            <p class="account-lead">
+              По умолчанию — OpenAI Whisper. Используется для диктовки и запросов транскрипции, если в модели не выбран отдельный STT.
+            </p>
+            <label class="login-field login-field--grid">
+              <span class="login-field-label">Модель STT</span>
+              <div class="login-field-control">
+                <select id="sel-stt-default" class="settings-select" aria-describedby="h-stt"></select>
+              </div>
+            </label>
+
+            <h3 class="account-subsection-title" id="h-tts" style="margin-top: 1.25rem">Озвучка ответа</h3>
+            <p class="account-lead">По умолчанию — Alloy. Голос применяется к ответам моделей с поддержкой синтеза речи (TTS).</p>
+            <label class="login-field login-field--grid">
+              <span class="login-field-label">Голос</span>
+              <div class="login-field-control">
+                <select id="sel-tts-voice" class="settings-select" aria-describedby="h-tts"></select>
+              </div>
+            </label>
+            <p class="account-lead" style="margin-top: 0.75rem">
+              Стоимость озвучки и распознавания зависит от выбранной в чате модели и актуальных тарифов —
+              см. <a href="/tariffs">страницу «Тарифы»</a>.
+            </p>
+            <p id="sound-msg" class="login-local-msg" style="display: none" role="status"></p>
+            <button type="button" class="btn btn-primary" id="btn-save-sound">Сохранить настройки звука</button>
+          </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const api = (p, o = {}) => {
+        const { headers: h, ...rest } = o;
+        const headers = { "ngrok-skip-browser-warning": "2048", ...(h || {}) };
+        const method = String(rest.method || "GET").toUpperCase();
+        if (rest.body && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+          headers["Content-Type"] = "application/json";
+        }
+        return fetch(p, { credentials: "include", ...rest, headers });
+      };
+
+      function initSettingsTabs() {
+        const tabs = document.querySelectorAll(".settings-tab[data-panel]");
+        const panels = document.querySelectorAll(".settings-tab-panel");
+        if (!tabs.length || !panels.length) return;
+
+        function activate(panelId) {
+          tabs.forEach((tab) => {
+            const on = tab.getAttribute("data-panel") === panelId;
+            tab.classList.toggle("settings-tab--active", on);
+            tab.setAttribute("aria-selected", on ? "true" : "false");
+            tab.tabIndex = on ? 0 : -1;
+          });
+          panels.forEach((p) => {
+            if (p.id === panelId) p.removeAttribute("hidden");
+            else p.setAttribute("hidden", "");
+          });
+        }
+
+        tabs.forEach((tab) => {
+          tab.addEventListener("click", () => {
+            activate(tab.getAttribute("data-panel") || "");
+          });
+        });
+
+        const list = document.querySelector(".settings-tabs");
+        if (list) {
+          list.addEventListener("keydown", (e) => {
+            const arr = [...tabs];
+            const i = arr.findIndex((t) => t.classList.contains("settings-tab--active"));
+            if (i < 0) return;
+            if (e.key === "ArrowRight" && i < arr.length - 1) {
+              e.preventDefault();
+              arr[i + 1].click();
+              arr[i + 1].focus();
+            } else if (e.key === "ArrowLeft" && i > 0) {
+              e.preventDefault();
+              arr[i - 1].click();
+              arr[i - 1].focus();
+            }
+          });
+        }
+      }
+
+      initSettingsTabs();
+
+      let checkNameTimer;
+      let accountCanSetUsername = false;
+      let accountHasPassword = false;
+
+      async function detailFromResponse(r, fallback) {
+        let msg = fallback;
+        try {
+          const j = await r.json();
+          if (j.detail) {
+            if (Array.isArray(j.detail) && j.detail.length) {
+              const x = j.detail[0];
+              msg = (x && (x.msg || x.message)) || msg;
+            } else if (typeof j.detail === "string") {
+              msg = j.detail;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        return msg;
+      }
+
+      function showAccountMsg(text, isErr) {
+        const el = document.getElementById("account-msg");
+        el.style.display = "block";
+        el.textContent = text;
+        el.className = "login-local-msg" + (isErr ? " login-local-msg--err" : " login-local-msg--ok");
+      }
+
+      function hideAccountMsg() {
+        const el = document.getElementById("account-msg");
+        el.style.display = "none";
+        el.textContent = "";
+      }
+
+      document.getElementById("set-username-input")?.addEventListener("input", (e) => {
+        clearTimeout(checkNameTimer);
+        const hint = document.getElementById("set-username-hint");
+        const v = e.target.value.trim();
+        if (v.length < 3) {
+          hint.style.display = "none";
+          return;
+        }
+        checkNameTimer = setTimeout(async () => {
+          try {
+            const r = await api("/api/auth/username-available?u=" + encodeURIComponent(v));
+            if (!r.ok) return;
+            const j = await r.json();
+            if (j.available) {
+              hint.style.display = "block";
+              hint.textContent = "Логин свободен";
+              hint.className = "login-field-hint login-field-hint--ok";
+            } else if (j.reason === "taken") {
+              hint.style.display = "block";
+              hint.textContent = "Этот логин уже занят";
+              hint.className = "login-field-hint login-field-hint--err";
+            } else {
+              hint.style.display = "none";
+            }
+          } catch {
+            /* ignore */
+          }
+        }, 400);
+      });
+
+      document.getElementById("form-account")?.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        hideAccountMsg();
+        const form = ev.target;
+        const fd = new FormData(form);
+        const username = String(fd.get("username") || "").trim();
+        const np = String(fd.get("newPassword") || "");
+        const npr = String(fd.get("newPasswordRepeat") || "");
+        const cur = String(fd.get("currentPassword") || "").trim();
+
+        const usernameOk = username.length >= 3;
+        const bothNewPwd = np.length > 0 && npr.length > 0;
+        const anyPwd = np.length > 0 || npr.length > 0 || cur.length > 0;
+
+        function validatePasswordFields() {
+          if (!bothNewPwd) {
+            showAccountMsg("Заполните новый пароль и повтор", true);
+            return false;
+          }
+          if (np !== npr) {
+            showAccountMsg("Новые пароли не совпадают", true);
+            return false;
+          }
+          if (np.length < 8) {
+            showAccountMsg("Пароль: не менее 8 символов", true);
+            return false;
+          }
+          if (accountHasPassword && !cur) {
+            showAccountMsg("Укажите текущий пароль", true);
+            return false;
+          }
+          return true;
+        }
+
+        if (accountCanSetUsername) {
+          if (username.length > 0 && username.length < 3) {
+            showAccountMsg("Логин: от 3 до 32 символов (латиница, цифры, _ - .)", true);
+            return;
+          }
+          if (!usernameOk || !bothNewPwd) {
+            showAccountMsg("Заполните логин и новый пароль с повтором — сохраняются только вместе.", true);
+            return;
+          }
+          if (!validatePasswordFields()) return;
+
+          const ru = await api("/api/auth/set-username", {
+            method: "POST",
+            body: JSON.stringify({ username }),
+          });
+          if (!ru.ok) {
+            showAccountMsg(await detailFromResponse(ru, "Не удалось сохранить логин"), true);
+            return;
+          }
+
+          const payload = { newPassword: np, newPasswordRepeat: npr };
+          if (accountHasPassword) payload.currentPassword = cur;
+          const rp = await api("/api/auth/change-password", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          if (!rp.ok) {
+            showAccountMsg(await detailFromResponse(rp, "Не удалось сохранить пароль"), true);
+            return;
+          }
+          location.href = "/";
+          return;
+        }
+
+        /* Логин уже задан — только смена пароля */
+        if (!anyPwd) {
+          showAccountMsg("Заполните поля пароля", true);
+          return;
+        }
+        if (!validatePasswordFields()) return;
+
+        const payload = { newPassword: np, newPasswordRepeat: npr };
+        if (accountHasPassword) payload.currentPassword = cur;
+        const r = await api("/api/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          showAccountMsg(await detailFromResponse(r, "Не удалось сохранить пароль"), true);
+          return;
+        }
+        location.href = "/";
+      });
+
+      async function boot() {
+        const guestBlock = document.getElementById("account-guest-only");
+        const blockedBanner = document.getElementById("account-blocked-msg");
+        const content = document.getElementById("account-content");
+        const userSummary = document.getElementById("account-user-summary");
+
+        function escapeHtml(s) {
+          const d = document.createElement("div");
+          d.textContent = s == null ? "" : String(s);
+          return d.innerHTML;
+        }
+
+        function formatBlockedDetail(d) {
+          if (!d || typeof d !== "object") return "Аккаунт заблокирован. Обратитесь в поддержку.";
+          let s = d.message || "Аккаунт заблокирован";
+          if (d.username) s += " Логин: " + d.username + ".";
+          if (d.userId) s += " ID: " + d.userId + ".";
+          else if (d.identifier) s += " " + d.identifier + ".";
+          return s + " Обратитесь в поддержку.";
+        }
+
+        let r;
+        try {
+          r = await api("/api/auth/me");
+        } catch {
+          const next = encodeURIComponent((location.pathname || "/settings") + (location.search || ""));
+          location.replace("/login?next=" + next);
+          return;
+        }
+
+        let rawText = "";
+        try {
+          rawText = await r.text();
+        } catch {
+          const next = encodeURIComponent((location.pathname || "/settings") + (location.search || ""));
+          location.replace("/login?next=" + next);
+          return;
+        }
+
+        let parsed = null;
+        try {
+          parsed = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          parsed = null;
+        }
+
+        if (r.status === 403 && parsed && parsed.detail && typeof parsed.detail === "object") {
+          const d = parsed.detail;
+          if (d.code === "ACCOUNT_BLOCKED") {
+            if (blockedBanner) {
+              blockedBanner.textContent = formatBlockedDetail(d);
+              blockedBanner.style.display = "block";
+            }
+            if (guestBlock) guestBlock.style.display = "none";
+            if (userSummary) userSummary.style.display = "none";
+            if (content) content.style.display = "none";
+            return;
+          }
+        }
+
+        const me = parsed || { guest: true };
+
+        if (me.guest) {
+          const next = encodeURIComponent((location.pathname || "/settings") + (location.search || ""));
+          location.replace("/login?next=" + next);
+          return;
+        }
+
+        if (blockedBanner) blockedBanner.style.display = "none";
+
+        if (userSummary && me.id) {
+          const un = (me.username || "").trim();
+          if (un) {
+            userSummary.innerHTML =
+              'Учётная запись: <strong>' +
+              escapeHtml(un) +
+              '</strong> · <span class="account-user-id-label">ID</span> ' +
+              '<code class="account-user-id-code">' +
+              escapeHtml(me.id) +
+              "</code>";
+          } else {
+            userSummary.innerHTML =
+              '<span class="account-user-id-label">ID</span> ' +
+              '<code class="account-user-id-code">' +
+              escapeHtml(me.id) +
+              "</code>";
+          }
+          userSummary.style.display = "block";
+        }
+
+        if (guestBlock) guestBlock.style.display = "none";
+        if (content) content.style.display = "block";
+
+        const locked = me.usernameLocked === true;
+        const hasPw = me.hasPassword === true;
+        const lockedBlock = document.getElementById("username-locked-block");
+        const editableWrap = document.getElementById("username-editable-wrap");
+        const display = document.getElementById("username-display");
+
+        accountCanSetUsername = !locked;
+        accountHasPassword = hasPw;
+
+        if (locked) {
+          if (display) display.textContent = me.username || "—";
+          if (lockedBlock) lockedBlock.style.display = "block";
+          if (editableWrap) editableWrap.style.display = "none";
+        } else {
+          if (lockedBlock) lockedBlock.style.display = "none";
+          if (editableWrap) editableWrap.style.display = "flex";
+        }
+
+        const rowCur = document.getElementById("row-current-password");
+        const fldCur = document.getElementById("fld-current-password");
+        const leadHas = document.getElementById("password-lead-has");
+        const leadFirst = document.getElementById("password-lead-first");
+
+        if (hasPw) {
+          if (leadHas) leadHas.style.display = "block";
+          if (leadFirst) leadFirst.style.display = "none";
+          if (rowCur) rowCur.style.removeProperty("display");
+          if (fldCur) fldCur.required = false;
+        } else {
+          if (leadHas) leadHas.style.display = "none";
+          if (leadFirst) leadFirst.style.display = "block";
+          if (rowCur) rowCur.style.display = "none";
+          if (fldCur) {
+            fldCur.required = false;
+            fldCur.value = "";
+          }
+        }
+
+        const warnNeedU = document.getElementById("password-warn-need-username");
+        if (warnNeedU) warnNeedU.style.display = locked ? "none" : "block";
+
+        await loadSoundSettings();
+      }
+
+      const STT_STORAGE_KEY = "ai_proxy_stt_slug";
+      const TTS_VOICE_STORAGE_KEY = "ai_proxy_tts_voice";
+      const TTS_VOICE_OPTIONS = [
+        ["alloy", "Alloy"],
+        ["echo", "Echo"],
+        ["fable", "Fable"],
+        ["onyx", "Onyx"],
+        ["nova", "Nova"],
+        ["shimmer", "Shimmer"],
+      ];
+
+      async function loadSoundSettings() {
+        const selStt = document.getElementById("sel-stt-default");
+        const selTts = document.getElementById("sel-tts-voice");
+        if (!selStt || !selTts) return;
+
+        selTts.innerHTML = "";
+        for (const [id, label] of TTS_VOICE_OPTIONS) {
+          const o = document.createElement("option");
+          o.value = id;
+          o.textContent = label;
+          selTts.appendChild(o);
+        }
+        try {
+          const raw = localStorage.getItem(TTS_VOICE_STORAGE_KEY) || "alloy";
+          const v = String(raw).trim().toLowerCase();
+          selTts.value = TTS_VOICE_OPTIONS.some((x) => x[0] === v) ? v : "alloy";
+        } catch {
+          selTts.value = "alloy";
+        }
+
+        let sttList = [];
+        try {
+          const r = await api("/api/models");
+          if (!r.ok) return;
+          const models = await r.json();
+          sttList = models
+            .filter((x) => x.supportsTranscription === true)
+            .sort((a, b) => String(a.displayName || "").localeCompare(String(b.displayName || ""), "ru"));
+        } catch {
+          return;
+        }
+        selStt.innerHTML = "";
+        for (const m of sttList) {
+          const o = document.createElement("option");
+          o.value = m.slug;
+          o.textContent = m.displayName || m.slug;
+          selStt.appendChild(o);
+        }
+        try {
+          const saved = (localStorage.getItem(STT_STORAGE_KEY) || "").trim();
+          if (saved && sttList.some((x) => x.slug === saved)) selStt.value = saved;
+          else {
+            const w = sttList.find((x) => x.slug === "openai/whisper-1");
+            selStt.value = w ? w.slug : sttList[0]?.slug || "";
+          }
+        } catch {
+          const w = sttList.find((x) => x.slug === "openai/whisper-1");
+          selStt.value = w ? w.slug : sttList[0]?.slug || "";
+        }
+      }
+
+      document.getElementById("btn-save-sound")?.addEventListener("click", () => {
+        const selStt = document.getElementById("sel-stt-default");
+        const selTts = document.getElementById("sel-tts-voice");
+        const msg = document.getElementById("sound-msg");
+        if (selStt) localStorage.setItem(STT_STORAGE_KEY, selStt.value);
+        if (selTts) localStorage.setItem(TTS_VOICE_STORAGE_KEY, selTts.value);
+        if (msg) {
+          msg.style.display = "block";
+          msg.textContent = "Настройки звука сохранены и будут использоваться в чате.";
+          msg.className = "login-local-msg login-local-msg--ok";
+        }
+      });
+
+      boot();
+
+    </script>
+  </body>
+</html>

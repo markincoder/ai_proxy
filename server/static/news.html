@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Новости — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=51" />
+  </head>
+  <body class="page-tariffs">
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
+    <header class="top-nav" role="navigation" aria-label="Главное меню">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/news" class="nav-link active">Новости</a>
+        <a href="/docs" class="nav-link">API</a>
+        <a href="/" class="nav-link">Чат</a>
+        <a href="/tariffs" class="nav-link">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link" id="nav-account-news">Настройки</a>
+        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
+      </nav>
+      <div class="nav-actions">
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
+      </div>
+    </header>
+
+    <main class="main-shell layout-wide page-news-main">
+      <h1 class="page-title">Новости</h1>
+      <p id="news-load-err" class="news-err" style="display: none"></p>
+      <div id="news-list" class="news-list" aria-live="polite"></div>
+    </main>
+
+    <footer class="site-footer">II Proxy</footer>
+
+    <script>
+      function escapeHtml(s) {
+        const d = document.createElement("div");
+        d.textContent = s == null ? "" : String(s);
+        return d.innerHTML;
+      }
+
+      function formatNewsDate(iso) {
+        if (!iso) return "—";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return escapeHtml(String(iso));
+        return escapeHtml(
+          d.toLocaleString("ru-RU", {
+            dateStyle: "long",
+            timeStyle: "short",
+          })
+        );
+      }
+
+      async function loadNews() {
+        const list = document.getElementById("news-list");
+        const errEl = document.getElementById("news-load-err");
+        errEl.style.display = "none";
+        errEl.textContent = "";
+        let rows;
+        try {
+          const r = await fetch("/api/news", { credentials: "same-origin" });
+          if (!r.ok) throw new Error(String(r.status));
+          rows = await r.json();
+        } catch {
+          errEl.textContent = "Не удалось загрузить список новостей. Попробуйте обновить страницу.";
+          errEl.style.display = "block";
+          list.innerHTML = "";
+          return;
+        }
+        if (!Array.isArray(rows) || !rows.length) {
+          list.innerHTML = '<p class="news-empty">Пока нет опубликованных новостей.</p>';
+          return;
+        }
+        list.innerHTML = rows
+          .map((n) => {
+            const img =
+              n.imageUrl && String(n.imageUrl).trim()
+                ? `<div class="news-card__media"><img class="news-card__img" src="${escapeHtml(
+                    String(n.imageUrl).trim()
+                  )}" alt="" loading="lazy" decoding="async" /></div>`
+                : "";
+            return `<article class="news-card">
+              <p class="news-card__meta">${formatNewsDate(n.publishedAt)}</p>
+              <h2 class="news-card__title">${escapeHtml(n.title || "")}</h2>
+              ${img}
+              <p class="news-card__body">${escapeHtml(n.body || "")}</p>
+            </article>`;
+          })
+          .join("");
+        try {
+          if (rows[0].publishedAt) {
+            localStorage.setItem("ii_proxy_news_last_seen_published_at", rows[0].publishedAt);
+          }
+        } catch {
+          /* private mode */
+        }
+      }
+
+      loadNews();
+    </script>
+  </body>
+</html>

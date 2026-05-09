@@ -4,7 +4,7 @@ import base64
 import hashlib
 import secrets
 from decimal import Decimal
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import get_db
+from ..deps import blocked_user_detail, get_db, user_public_identifier
 from ..models import User
 
 router = APIRouter(prefix="/api/auth/oauth", tags=["auth"])
@@ -46,12 +46,20 @@ def _login_redirect(error: str) -> RedirectResponse:
     return RedirectResponse(url=f"/login?oauth_error={error}", status_code=302)
 
 
-def _vk_user_from_access_token(access_token: str) -> tuple[str, str | None]:
-    """Профиль владельца токена: user_id и отображаемое имя (users.get без user_ids)."""
+def _login_blocked_redirect(user: User) -> RedirectResponse:
+    ident = quote(user_public_identifier(user), safe="")
+    uid_q = quote(str(user.id), safe="")
+    return RedirectResponse(
+        url=f"/login?oauth_error=blocked&blocked_id={uid_q}&blocked_uid={ident}",
+        status_code=302,
+    )
+
+
+def _vk_user_id_from_access_token(access_token: str) -> str:
+    """Только идентификатор VK (имя/ФИО не запрашиваем и не храним)."""
     r = httpx.get(
         "https://api.vk.com/method/users.get",
         params={
-            "fields": "first_name,last_name",
             "v": VK_API_VER,
             "access_token": access_token,
         },
@@ -64,16 +72,11 @@ def _vk_user_from_access_token(access_token: str) -> tuple[str, str | None]:
     arr = payload.get("response") or []
     if not arr:
         raise ValueError("empty response")
-    u = arr[0]
-    uid = str(u["id"])
-    fn = (u.get("first_name") or "").strip()
-    ln = (u.get("last_name") or "").strip()
-    full = f"{fn} {ln}".strip()
-    return uid, full or None
+    return str(arr[0]["id"])
 
 
-def _yandex_fetch_profile(access_token: str) -> tuple[str, str | None]:
-    """Возвращает (yandex_numeric_id, display_name)."""
+def _yandex_user_id(access_token: str) -> str:
+    """Только числовой id Яндекса (без ФИО, email и т.д.)."""
     r = httpx.get(
         "https://login.yandex.ru/info",
         params={"format": "json"},
@@ -85,40 +88,22 @@ def _yandex_fetch_profile(access_token: str) -> tuple[str, str | None]:
     raw_id = data.get("id")
     if raw_id is None:
         raise ValueError("yandex profile missing id")
-    uid = str(raw_id)
-    parts = [
-        (data.get("first_name") or "").strip(),
-        (data.get("last_name") or "").strip(),
-    ]
-    name = " ".join(p for p in parts if p).strip()
-    if not name:
-        name = (data.get("display_name") or data.get("real_name") or data.get("login") or "").strip()
-    return uid, name or None
+    return str(raw_id)
 
 
-def _vk_commit_user_session(
-    request: Request,
-    db: Session,
-    user_id: str,
-    display_name: str | None,
-) -> None:
+def _get_or_create_vk_user(db: Session, vk_numeric_id: str) -> User:
     s = get_settings()
-    user = db.query(User).filter(User.vk_user_id == user_id).first()
+    user = db.query(User).filter(User.vk_user_id == vk_numeric_id).first()
     initial = Decimal(s.oauth_new_user_balance)
     if not user:
         user = User(
-            vk_user_id=user_id,
-            name=display_name or f"VK {user_id}",
+            vk_user_id=vk_numeric_id,
             balance=initial,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    else:
-        if display_name and user.name != display_name:
-            user.name = display_name
-            db.commit()
-    request.session["user_id"] = user.id
+    return user
 
 
 class VkSdkSessionBody(BaseModel):
@@ -135,10 +120,13 @@ def vk_session_from_sdk_token(request: Request, body: VkSdkSessionBody, db: Sess
     if not token:
         raise HTTPException(status_code=400, detail="access_token required")
     try:
-        uid, dname = _vk_user_from_access_token(token)
+        uid = _vk_user_id_from_access_token(token)
     except (httpx.HTTPError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid or expired VK access token")
-    _vk_commit_user_session(request, db, uid, dname)
+    user = _get_or_create_vk_user(db, uid)
+    if user.is_blocked == 1:
+        raise HTTPException(status_code=403, detail=blocked_user_detail(user))
+    request.session["user_id"] = user.id
     return {"ok": True, "user_id": request.session.get("user_id")}
 
 
@@ -198,7 +186,7 @@ def yandex_oauth_callback(
         access = body.get("access_token")
         if not access:
             return _login_redirect("yandex_token")
-        yid, dname = _yandex_fetch_profile(access)
+        yid = _yandex_user_id(access)
     except (httpx.HTTPError, ValueError, KeyError):
         return _login_redirect("yandex_profile")
 
@@ -207,17 +195,14 @@ def yandex_oauth_callback(
     if not user:
         user = User(
             yandex_user_id=yid,
-            name=dname or f"Яндекс {yid}",
             balance=initial,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    else:
-        if dname and user.name != dname:
-            user.name = dname
-            db.commit()
 
+    if user.is_blocked == 1:
+        return _login_blocked_redirect(user)
     request.session["user_id"] = user.id
     return RedirectResponse(url="/", status_code=302)
 
@@ -292,9 +277,12 @@ def vk_oauth_callback(
         access_token = data.get("access_token")
         if not access_token:
             return _login_redirect("vk_token")
-        user_id, dname = _vk_user_from_access_token(access_token)
+        vk_uid = _vk_user_id_from_access_token(access_token)
     except (httpx.HTTPError, KeyError, ValueError):
         return _login_redirect("vk_token")
 
-    _vk_commit_user_session(request, db, user_id, dname)
+    user = _get_or_create_vk_user(db, vk_uid)
+    if user.is_blocked == 1:
+        return _login_blocked_redirect(user)
+    request.session["user_id"] = user.id
     return RedirectResponse(url="/", status_code=302)

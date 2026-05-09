@@ -3,6 +3,9 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Корень репозитория (рядом с каталогом `server/`).
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def _env_file_paths() -> tuple[str, ...]:
     base = Path(__file__).resolve().parent
@@ -30,8 +33,7 @@ class Settings(BaseSettings):
     )
 
     openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
-    openrouter_site_url: str = Field(default="http://localhost:8000", validation_alias="OPENROUTER_SITE_URL")
-    openrouter_app_title: str = Field(default="AI Proxy", validation_alias="OPENROUTER_APP_TITLE")
+    openrouter_app_title: str = Field(default="II Proxy", validation_alias="OPENROUTER_APP_TITLE")
     openrouter_api_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         validation_alias="OPENROUTER_API_BASE_URL",
@@ -39,6 +41,9 @@ class Settings(BaseSettings):
     openrouter_free_router_slug: str = Field(default="openrouter/free", validation_alias="OPENROUTER_FREE_ROUTER_SLUG")
     thread_model_fallback_slug: str = Field(default="openai/gpt-4o", validation_alias="THREAD_MODEL_FALLBACK_SLUG")
     removed_openrouter_slugs: str = Field(default="", validation_alias="REMOVED_OPENROUTER_SLUGS")
+    # То же, что для scripts/sync_openrouter_prices.py: коэффициенты для USD → баланс (чат usage.cost, видео, см. pricing_rub).
+    openrouter_usd_rub: str = Field(default="100", validation_alias="OPENROUTER_USD_RUB")
+    pricing_markup_mult: str = Field(default="1", validation_alias="PRICING_MARKUP_MULT")
     # true: httpx использует HTTP(S)_PROXY из окружения. false — прямой выход (если ConnectError/TLS через прокси).
     httpx_trust_env_openrouter: str = Field(default="true", validation_alias="OPENROUTER_HTTPX_TRUST_ENV")
 
@@ -58,6 +63,15 @@ class Settings(BaseSettings):
     oauth_new_user_balance: str = Field(default="0", validation_alias="OAUTH_NEW_USER_BALANCE")
 
     internal_api_secret: str = Field(default="", validation_alias="INTERNAL_API_SECRET")
+    # Список через запятую: сканирование сохранённых чатов в админке (модерация).
+    forbidden_message_keywords: str = Field(default="", validation_alias="FORBIDDEN_MESSAGE_KEYWORDS")
+
+    # Каталог для загруженных картинок новостей (относительный путь — от корня репо; абсолютный — как есть).
+    # В Docker монтируйте том на этот каталог вместе с `data/app.db`.
+    news_upload_dir: str = Field(
+        default="data/uploads/news",
+        validation_alias=AliasChoices("NEWS_UPLOAD_DIR", "NEWS_IMAGE_UPLOAD_DIR"),
+    )
 
     @property
     def yookassa_enabled(self) -> bool:
@@ -74,6 +88,23 @@ class Settings(BaseSettings):
     @property
     def openrouter_httpx_trust_env(self) -> bool:
         return _env_is_true(self.httpx_trust_env_openrouter)
+
+    @property
+    def forbidden_message_keyword_list(self) -> list[str]:
+        raw = self.forbidden_message_keywords.strip()
+        if not raw:
+            return []
+        out: list[str] = []
+        for x in raw.split(","):
+            t = x.strip().lower()
+            if t:
+                out.append(t)
+        return list(dict.fromkeys(out))
+
+    @property
+    def news_upload_path(self) -> Path:
+        p = Path(self.news_upload_dir)
+        return p.resolve() if p.is_absolute() else (REPO_ROOT / p).resolve()
 
 
 def get_settings() -> Settings:

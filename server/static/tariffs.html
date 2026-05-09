@@ -3,42 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Модели и тарифы — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=12" />
+    <title>Модели и тарифы — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=48" />
   </head>
   <body class="page-tariffs">
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
     <header class="top-nav" role="navigation" aria-label="Главное меню">
       <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">AI</span>
-        <span>AI Proxy</span>
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
       </a>
       <nav class="nav-links">
+        <a href="/news" class="nav-link">Новости</a>
         <a href="/" class="nav-link">Чат</a>
-        <a href="/tariffs" class="nav-link active">Все модели</a>
+        <a href="/tariffs" class="nav-link active">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link" id="nav-account-tariffs">Настройки</a>
+        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
       </nav>
       <div class="nav-actions">
-        <a href="/" class="btn">К чату</a>
-        <a href="/login" class="btn btn-primary" id="nav-login-tariffs" style="display: none">Войти</a>
-        <button type="button" class="btn" id="btn-logout-tariffs" title="Завершить сессию">
-          Выйти
-        </button>
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
       </div>
     </header>
 
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
-      <p class="page-lead">
-        Разбивка по типам. Текстовые модели — в основном по токенам (вход / выход за 1M).
-        Вкладка <strong>«Транскрипция»</strong> в чате — модели только для распознавания аудио в текст (микрофон и вложение в
-        поле ввода). <strong>«Речь в чате»</strong> — ответ модели может включать аудио по правилам провайдера. Видео и
-        картинки — см. карточку модели.
-      </p>
+
+      <aside class="tariffs-promo" aria-label="Условия оплаты">
+        <p class="tariffs-promo__title">Платите только за использование</p>
+        <p class="tariffs-promo__text">
+          Никаких подписок, месячных пакетов и абонементов — вы пополняете баланс и тратите его только на реальные
+          запросы к моделям по указанным ниже тарифам.
+        </p>
+        <p class="tariffs-promo__text">
+          <strong>Про токены:</strong> в текстовых моделях цены — за <strong>1 млн токенов</strong> (вход и выход вместе).
+          Простой ориентир для <strong>русского</strong> текста: <strong>1 млн токенов ≈ 300–500 тыс. слов</strong> (зависит от
+          текста; для картинок, видео и аудио смотрите единицы в карточке модели).
+        </p>
+      </aside>
+
+      <div class="tariffs-filter-row">
+        <label for="tariffs-filter" class="tariffs-filter-label">Поиск по названию</label>
+        <input
+          type="search"
+          id="tariffs-filter"
+          placeholder="Название модели или провайдер…"
+          autocomplete="off"
+        />
+      </div>
 
       <div class="tariffs-tabs" role="tablist" aria-label="Категории моделей" id="tariffs-tablist"></div>
       <div id="tariffs-panels"></div>
     </main>
 
-    <footer class="site-footer">AI Proxy</footer>
+    <footer class="site-footer">II Proxy</footer>
 
     <script>
       const MODEL_GROUPS = [
@@ -65,6 +90,12 @@
         if (m.supportsTranscription) return "transcription";
         if (m.supportsMusicGeneration) return "music";
         return "text";
+      }
+
+      function modelProducesChatAudio(m) {
+        const s = String(m.slug || "").toLowerCase();
+        if (s.includes("lyria")) return true;
+        return m.supportsSpeech === true && m.supportsMusicGeneration === true;
       }
 
       function billingBadge(m) {
@@ -162,8 +193,56 @@
         return Number(x).toLocaleString("ru-RU", { maximumFractionDigits: 4 });
       }
 
-      function yn(v) {
-        return v ? "да" : "нет";
+      function categoryTitleForModel(m) {
+        const gid = modelGroupId(m);
+        const g = MODEL_GROUPS.find((x) => x.id === gid);
+        return g ? g.title : gid;
+      }
+
+      function modelCardHtml(m, showCategory) {
+        const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
+        const sttOnly =
+          m.capabilities?.transcription &&
+          !m.capabilities?.speech &&
+          !m.capabilities?.musicGeneration &&
+          !m.capabilities?.imageGeneration &&
+          !m.capabilities?.videoGeneration;
+        const metaLine = showCategory
+          ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(categoryTitleForModel(m))}</span> · <code>${escape(m.slug)}</code>`
+          : `${escape(m.provider)} · <code>${escape(m.slug)}</code>`;
+        const chatFooter =
+          `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-model-id="${escape(m.slug)}">Выбрать в чате</a>` +
+          (sttOnly
+            ? `<p class="tariff-price-hint">Только распознавание: во вкладке «Транскрипция» — микрофон или аудио 📎. Диалог — другие модели; API: <code>POST /api/v1/transcribe</code>.</p>`
+            : "");
+        return `
+                <div class="tariff-card-head">
+                  <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
+                  <span class="tariff-billing-badge">${escape(billingBadge(m))}</span>
+                </div>
+                <div class="tariff-meta">${metaLine}</div>
+                ${
+                  m.descriptionRu
+                    ? `<p class="tariff-desc">${escape(m.descriptionRu)}</p>`
+                    : ""
+                }
+                ${renderPricingBlock(m)}
+                ${chatFooter}
+              `;
+      }
+
+      function appendModelToGrid(grid, m, showCategory) {
+        const art = document.createElement("article");
+        art.className = "card tariff-card";
+        const slug = m.slug != null ? String(m.slug) : "";
+        const slugWords = slug.replace(/[/\-_:]/g, " ");
+        const ft = [m.displayName, slug, slugWords, m.provider, categoryTitleForModel(m)]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        art.setAttribute("data-filter-text", ft);
+        art.innerHTML = modelCardHtml(m, showCategory);
+        grid.appendChild(art);
       }
 
       fetch("/api/models")
@@ -179,13 +258,30 @@
             );
           }
 
-          const groups = MODEL_GROUPS.filter((g) => buckets[g.id].length > 0);
+          const allSorted = [...models].sort((a, b) =>
+            String(a.displayName).localeCompare(String(b.displayName), "ru"),
+          );
+
+          const tabGroups = [];
+          if (models.length > 0) {
+            tabGroups.push({ id: "all", emoji: "📋", title: "Все" });
+          }
+          for (const g of MODEL_GROUPS) {
+            if (buckets[g.id].length > 0) tabGroups.push(g);
+          }
+
           const tablist = document.getElementById("tariffs-tablist");
           const panelsRoot = document.getElementById("tariffs-panels");
           tablist.innerHTML = "";
           panelsRoot.innerHTML = "";
 
-          groups.forEach((g, i) => {
+          if (tabGroups.length === 0) {
+            panelsRoot.innerHTML =
+              '<p class="hint" style="margin:0">Нет моделей в каталоге.</p>';
+            return;
+          }
+
+          tabGroups.forEach((g, i) => {
             const tab = document.createElement("button");
             tab.type = "button";
             tab.className = "tariffs-tab" + (i === 0 ? " tariffs-tab--active" : "");
@@ -205,62 +301,83 @@
             panel.hidden = i !== 0;
             panel.dataset.group = g.id;
 
-            const grid = document.createElement("div");
-            grid.className = "tariffs-grid";
-
             if (g.id === "transcription") {
               const note = document.createElement("p");
               note.className = "hint";
               note.style.margin = "0 0 1rem";
               note.innerHTML =
                 "Эти модели <strong>не для диалога</strong> — только распознавание в текст. В <a href=\"/\">чате</a> выберите " +
-                "вкладку «Транскрипция» и модель, затем микрофон (удерживайте) или аудио во вложении 📎. " +
-                "Для интеграций: <code>POST /api/v1/transcribe</code>.";
+                "вкладку «Транскрипция» и модель, затем микрофон (удерживайте) или аудио во вложении 📎.";
               panel.appendChild(note);
             }
 
-            for (const m of buckets[g.id]) {
-              const art = document.createElement("article");
-              art.className = "card tariff-card";
-              const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
-              const sttOnly =
-                m.capabilities?.transcription &&
-                !m.capabilities?.speech &&
-                !m.capabilities?.musicGeneration &&
-                !m.capabilities?.imageGeneration &&
-                !m.capabilities?.videoGeneration;
-              const chatFooter = sttOnly
-                ? `<p class="tariff-price-hint">Не для диалога. Распознавание в <a href="${chatHref}">чате</a> (вкладка «Транскрипция») или API <code>POST /api/v1/transcribe</code>. Голосовой ответ — модели «Речь в чате».</p>`
-                : `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>`;
-              art.innerHTML = `
-                <div class="tariff-card-head">
-                  <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
-                  <span class="tariff-billing-badge">${escape(billingBadge(m))}</span>
-                </div>
-                <div class="tariff-meta">${escape(m.provider)} · <code>${escape(m.slug)}</code></div>
-                ${
-                  m.descriptionRu
-                    ? `<p class="tariff-desc">${escape(m.descriptionRu)}</p>`
-                    : ""
+            const showCat = g.id === "all";
+            const modelList = g.id === "all" ? allSorted : buckets[g.id];
+
+            if (g.id === "music") {
+              const audioMs = modelList.filter((m) => modelProducesChatAudio(m));
+              const textMs = modelList.filter((m) => !modelProducesChatAudio(m));
+              function addMusicSubsection(title, models) {
+                if (models.length === 0) return;
+                const lab = document.createElement("p");
+                lab.className = "tariffs-subsection-label";
+                lab.textContent = title;
+                panel.appendChild(lab);
+                const subGrid = document.createElement("div");
+                subGrid.className = "tariffs-grid";
+                for (const m of models) {
+                  appendModelToGrid(subGrid, m, showCat);
                 }
-                ${renderPricingBlock(m)}
-                <p class="tariff-caps-title">Возможности</p>
-                <ul class="tariff-caps">
-                  <li>Vision (вход): ${yn(m.capabilities?.visionInput)}</li>
-                  <li>Картинки в ответе: ${yn(m.capabilities?.imageGeneration)}</li>
-                  <li>Видео (генерация): ${yn(m.capabilities?.videoGeneration)}</li>
-                  <li>Транскрипция: ${yn(m.capabilities?.transcription)}</li>
-                  <li>Речь в чате: ${yn(m.capabilities?.speech)}</li>
-                  <li>Музыка: ${yn(m.capabilities?.musicGeneration)}</li>
-                  <li>Код: ${yn(m.capabilities?.coding)}</li>
-                </ul>
-                ${chatFooter}
-              `;
-              grid.appendChild(art);
+                panel.appendChild(subGrid);
+              }
+              addMusicSubsection("Генерация аудио", audioMs);
+              addMusicSubsection("Только текст (без готового звука)", textMs);
+            } else if (g.id === "speech") {
+              const audioOutMs = modelList.filter((m) => modelProducesChatAudio(m));
+              const speechInTextOutMs = modelList.filter((m) => !modelProducesChatAudio(m));
+              function addSpeechSubsection(title, models) {
+                if (models.length === 0) return;
+                const lab = document.createElement("p");
+                lab.className = "tariffs-subsection-label";
+                lab.textContent = title;
+                panel.appendChild(lab);
+                const subGrid = document.createElement("div");
+                subGrid.className = "tariffs-grid";
+                for (const m of models) {
+                  appendModelToGrid(subGrid, m, showCat);
+                }
+                panel.appendChild(subGrid);
+              }
+              addSpeechSubsection("Распознавание и ответ со звуком в чате", audioOutMs);
+              addSpeechSubsection("Речь на входе, ответ текстом", speechInTextOutMs);
+            } else {
+              const grid = document.createElement("div");
+              grid.className = "tariffs-grid";
+              for (const m of modelList) {
+                appendModelToGrid(grid, m, showCat);
+              }
+              panel.appendChild(grid);
             }
-            panel.appendChild(grid);
             panelsRoot.appendChild(panel);
           });
+
+          const filterInput = document.getElementById("tariffs-filter");
+          function applyTariffsFilter() {
+            const raw = (filterInput && filterInput.value ? filterInput.value : "").trim().toLowerCase();
+            const tokens = raw.split(/\s+/).filter(Boolean);
+            panelsRoot.querySelectorAll("article.tariff-card").forEach((art) => {
+              const hay = (art.getAttribute("data-filter-text") || "").toLowerCase();
+              const hide = tokens.length > 0 && !tokens.every((t) => hay.includes(t));
+              art.hidden = hide;
+              art.classList.toggle("tariff-card--hidden", hide);
+            });
+          }
+          if (filterInput) {
+            filterInput.addEventListener("input", applyTariffsFilter);
+            filterInput.addEventListener("search", applyTariffsFilter);
+          }
+          /* Если текст введён до прихода списка, применить фильтр после отрисовки карточек */
+          applyTariffsFilter();
 
           function activateTab(gid) {
             tablist.querySelectorAll(".tariffs-tab").forEach((t) => {
@@ -282,10 +399,10 @@
 
           const MODEL_KEY = "ai_proxy_model_slug";
           const EXPLICIT_KEY = "ai_proxy_explicit_model";
-          function rememberModelChoice(slug) {
-            if (!slug) return;
+          function rememberModelChoice(modelId) {
+            if (!modelId) return;
             try {
-              sessionStorage.setItem(MODEL_KEY, slug);
+              sessionStorage.setItem(MODEL_KEY, modelId);
               sessionStorage.setItem(EXPLICIT_KEY, "1");
             } catch {
               /* ignore */
@@ -294,8 +411,8 @@
           panelsRoot.addEventListener("click", (e) => {
             const a = e.target.closest("a.tariff-open-chat");
             if (a && panelsRoot.contains(a)) {
-              const slug = a.dataset.slug;
-              rememberModelChoice(slug);
+              const id = a.dataset.modelId;
+              rememberModelChoice(id);
               return;
             }
             const art = e.target.closest("article.tariff-card");
@@ -303,8 +420,8 @@
             const link = art.querySelector("a.tariff-open-chat");
             if (!link) return;
             e.preventDefault();
-            const slug = link.dataset.slug;
-            rememberModelChoice(slug);
+            const id = link.dataset.modelId;
+            rememberModelChoice(id);
             location.href = link.href;
           });
         })
@@ -313,39 +430,6 @@
           document.getElementById("tariffs-panels").innerHTML =
             '<p class="err" style="display:block">Не удалось загрузить модели.</p>';
         });
-    </script>
-    <script>
-      (function () {
-        const loginEl = document.getElementById("nav-login-tariffs");
-        const outEl = document.getElementById("btn-logout-tariffs");
-        fetch("/api/auth/me", { credentials: "include" })
-          .then((r) => r.json())
-          .then((me) => {
-            if (me.guest) {
-              if (loginEl) loginEl.style.removeProperty("display");
-              if (outEl) outEl.style.display = "none";
-            } else {
-              if (loginEl) loginEl.style.display = "none";
-              if (outEl) outEl.style.removeProperty("display");
-            }
-            try {
-              const next = encodeURIComponent(location.pathname + location.search);
-              if (loginEl) loginEl.href = "/login?next=" + next;
-            } catch {
-              /* ignore */
-            }
-          })
-          .catch(() => {
-            if (loginEl) loginEl.style.removeProperty("display");
-            if (outEl) outEl.style.display = "none";
-          });
-      })();
-    </script>
-    <script>
-      document.getElementById("btn-logout-tariffs").onclick = async () => {
-        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-        location.href = "/login";
-      };
     </script>
   </body>
 </html>

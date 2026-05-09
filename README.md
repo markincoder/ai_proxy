@@ -1,4 +1,4 @@
-# AI Proxy
+# II Proxy
 
 Веб-приложение для доступа к текстовым и мультимодальным моделям через [OpenRouter](https://openrouter.ai/): учёт токенов, внутренний баланс в рублях, вход через **Яндекс ID** и **VK ID** (OAuth2), пополнение через ЮKassa. Фронтенд — статические HTML/CSS/JS, бэкенд — **FastAPI**, база — **SQLite** по умолчанию.
 
@@ -45,12 +45,11 @@
 | `DATABASE_URL` | Строка подключения SQLAlchemy. По умолчанию SQLite: файл БД создаётся автоматически при первом запуске (см. раздел «База данных»). |
 | `SESSION_SECRET` или `NEXTAUTH_SECRET` | Секрет для подписи cookie-сессии. В продакшене задайте длинную случайную строку (например: `openssl rand -base64 32`). |
 | `OPENROUTER_API_KEY` | Ключ с [openrouter.ai/keys](https://openrouter.ai/keys). **Обязателен** для чата. |
-| `OPENROUTER_SITE_URL` | URL сайта для заголовка OpenRouter (часто `http://localhost:8000` в разработке). |
-| `OPENROUTER_APP_TITLE` | Название приложения в заголовках OpenRouter. |
+| `OPENROUTER_APP_TITLE` | Название приложения в заголовках OpenRouter (`X-Title`). |
 | `YOOKASSA_ENABLED` | `true` — включены создание платежа и webhook; нужны `YOOKASSA_*`. `false` — кнопка пополнения скрыта. |
 | `YOOKASSA_SHOP_ID` | Идентификатор магазина ЮKassa. |
 | `YOOKASSA_SECRET_KEY` | Секретный ключ ЮKassa. |
-| `NEXT_PUBLIC_APP_URL` | Публичный базовый URL приложения без завершающего слэша: редиректы после оплаты ЮKassa и **OAuth callback** должны совпадать с зарегистрированными у провайдера. |
+| `NEXT_PUBLIC_APP_URL` | Публичный базовый URL приложения без завершающего слэша: редиректы после оплаты ЮKassa, **OAuth callback** (должен совпадать с URL у провайдера), а также заголовок **`HTTP-Referer`** в запросах к OpenRouter. |
 | `YANDEX_OAUTH_CLIENT_ID` | Идентификатор приложения в [кабинете Yandex OAuth](https://oauth.yandex.ru/). Если задан вместе с секретом — на `/login` появляется кнопка «Яндекс ID». |
 | `YANDEX_OAUTH_CLIENT_SECRET` | Секрет приложения Яндекса. |
 | `VK_OAUTH_CLIENT_ID` | ID приложения VK (раздел мини-приложений / Standalone на [dev.vk.com](https://dev.vk.com/)). |
@@ -140,4 +139,4 @@ python scripts/sync_openrouter_prices.py
 
 В каталоге и админке у каждой строки `ai_models` задаются флаги типа: **видео** (отдельный API `POST /videos`), **транскрипция** (`/audio/transcriptions`, в чате не выбирается), **речь в чате** (модели с аудиовыходом в completions), **музыка** (например Lyria). Чат и тарифы группируют карточки по этим признакам.
 
-**Видео (Veo, Sora, Seedance)** и устаревшие slug без маршрутизации в OpenRouter удаляются при старте (`_REMOVED_OPENROUTER_SLUGS` в `server/database.py`). **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**, **gpt-4o-audio-preview**. **Музыка:** **google/lyria-3-***. **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок: **FLUX** заменены на **openai/gpt-5-image** и **google/gemini-3-pro-image-preview**.
+**Видео (Veo, Sora, Seedance)** и прочие неактуальные идентификаторы: **записи в `ai_models`, которых нет в `server/data/default_model_specs.json`, при старте удаляются** (треды перепривязываются на `THREAD_MODEL_FALLBACK_SLUG`). Дополнительно через **`.env`** можно задать **`REMOVED_OPENROUTER_SLUGS`**, чтобы убрать slug без правки JSON. **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**. **Музыка:** **google/lyria-3-*** (на OpenRouter доступны как preview-идентификаторы). **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок в чате: **openai/gpt-5-image** / **gpt-5-image-mini**, **google/gemini-2.5-flash-image** и др.

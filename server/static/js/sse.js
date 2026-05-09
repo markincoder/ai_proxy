@@ -1,12 +1,47 @@
-/** Разбор SSE OpenRouter + event:billing + user_transcript + delta.audio */
+/** Разбор SSE OpenRouter + event:billing + user_transcript + delta.audio / modaudio */
+
+/**
+ * OpenRouter/OpenAI: delta.content может быть строкой или массивом частей
+ * [{ type: "text", text: "…" }]. Браузер делает acc += [] → "[object Object]".
+ */
+function flattenOpenRouterDeltaContent(c) {
+  if (c == null) return "";
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    const out = [];
+    for (const p of c) {
+      if (typeof p === "string") {
+        out.push(p);
+        continue;
+      }
+      if (p && typeof p === "object") {
+        if (p.type === "text" && p.text != null) out.push(String(p.text));
+        else if (typeof p.text === "string") out.push(p.text);
+      }
+    }
+    return out.join("");
+  }
+  if (typeof c === "object" && c.text != null) return String(c.text);
+  return "";
+}
 
 function extractOpenRouterErrorMessage(j) {
   const e = j?.error;
   if (e == null) return "";
   if (typeof e === "string") return e;
   if (typeof e === "object" && e != null) {
-    if ("message" in e && e.message != null) return String(e.message);
-    if ("code" in e && e.code != null) return String(e.code);
+    const bits = [];
+    if ("message" in e && e.message != null) bits.push(String(e.message));
+    const meta = e.metadata;
+    if (meta != null) {
+      try {
+        bits.push(typeof meta === "string" ? meta : JSON.stringify(meta));
+      } catch {
+        bits.push(String(meta));
+      }
+    }
+    if ("code" in e && e.code != null && !bits.length) bits.push(String(e.code));
+    if (bits.length) return bits.join(" · ");
   }
   try {
     return JSON.stringify(e);
@@ -82,9 +117,7 @@ export async function consumeStream(
         if (j.error) {
           const detail = extractOpenRouterErrorMessage(j) || "Ошибка";
           try {
-            if (typeof sessionStorage !== "undefined" && sessionStorage.debugOpenRouter) {
-              console.warn("[OpenRouter SSE]", detail, j);
-            }
+            console.warn("[OpenRouter SSE] error chunk", detail, j);
           } catch {
             /* ignore */
           }
@@ -112,12 +145,20 @@ export async function consumeStream(
         if (Array.isArray(imgs) && imgs.length && typeof onImages === "function") {
           onImages(imgs);
         }
-        const audd = delta?.audio;
+        let audd = delta?.audio;
+        if (!audd && delta?.modaudio != null) {
+          const m = delta.modaudio;
+          audd = typeof m === "string" ? { data: m } : m;
+        }
         if (audd && typeof onAudioDelta === "function") {
           onAudioDelta(audd);
         }
-        const d = delta?.content;
-        if (d) onDelta(d);
+        const text = flattenOpenRouterDeltaContent(delta?.content);
+        if (text) {
+          onDelta(text);
+        } else if (audd && typeof audd.transcript === "string" && audd.transcript) {
+          onDelta(audd.transcript);
+        }
       } catch {
         /* ignore */
       }

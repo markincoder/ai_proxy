@@ -3,49 +3,144 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Вход — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=5" />
+    <title>Вход — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=48" />
   </head>
   <body>
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
     <header class="top-nav" role="navigation" aria-label="Главное меню">
       <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">AI</span>
-        <span>AI Proxy</span>
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
       </a>
       <nav class="nav-links">
-        <a href="/" class="nav-link">Новый чат</a>
-        <a href="/tariffs" class="nav-link">Все модели</a>
+        <a href="/news" class="nav-link">Новости</a>
+        <a href="/" class="nav-link">Чат</a>
+        <a href="/tariffs" class="nav-link">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link">Настройки</a>
+        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
       </nav>
       <div class="nav-actions">
-        <span class="balance-pill" style="opacity: 0.7">Вход</span>
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
       </div>
     </header>
 
     <div class="login-wrap">
-      <p id="oauth-err" style="color: #b91c1c; font-size: 0.85rem; margin-bottom: 0.75rem; text-align: center; display: none"></p>
+      <div class="login-box login-box--wide">
+        <p id="oauth-err" class="login-banner-err" style="display: none"></p>
 
-      <div class="login-box" id="box-oauth" style="display: none">
-        <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.9rem">Войти через аккаунт</p>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem">
-          <a class="btn btn-primary" id="link-yandex" href="#" style="text-align: center; text-decoration: none"
-            >Яндекс ID</a
-          >
-          <a class="btn" id="link-vk" href="#" style="text-align: center; text-decoration: none">VK ID</a>
+        <p id="no-oauth-hint" class="login-oauth-miss login-oauth-miss--top" style="display: none">
+          Вход через Яндекс и VK не настроен (<code>.env</code>). Используйте форму ниже.
+        </p>
+
+        <div id="view-choice">
+          <p class="login-box-lead" id="login-lead">Войдите через Яндекс или VK&nbsp;ID — или по логину и паролю</p>
+
+          <div id="oauth-row" class="oauth-buttons" style="display: none">
+            <a class="oauth-btn oauth-btn--yandex" id="link-yandex" href="#" rel="noopener noreferrer">
+              <span class="oauth-btn__badge oauth-btn__badge--yandex" aria-hidden="true">Я</span>
+              <span class="oauth-btn__label">Войти с Яндекс&nbsp;ID</span>
+            </a>
+            <a class="oauth-btn oauth-btn--vk" id="link-vk" href="#" rel="noopener noreferrer">
+              <span class="oauth-btn__badge oauth-btn__badge--vk" aria-hidden="true">vk</span>
+              <span class="oauth-btn__label">Продолжить с VK&nbsp;ID</span>
+            </a>
+          </div>
+
+          <div id="login-or-divider" class="login-divider" style="display: none" role="separator">
+            <span>или</span>
+          </div>
+
+          <button type="button" class="btn login-choice-local-btn" id="btn-show-local">
+            Вход по логину и паролю
+          </button>
         </div>
-      </div>
 
-      <p id="no-oauth-msg" style="display: none; text-align: center; color: var(--muted); margin: 1rem 0; font-size: 0.9rem; max-width: 24rem; margin-left: auto; margin-right: auto">
-        Вход только через Яндекс или VK. Задайте в <code>.env</code> переменные <code>YANDEX_OAUTH_*</code> и/или <code>VK_OAUTH_*</code> и перезапустите сервер.
-      </p>
+        <div class="login-local login-local-view" id="view-local" hidden>
+          <button type="button" class="login-back-btn" id="btn-back-oauth" hidden>
+            ← Войти через Яндекс или VK
+          </button>
+          <div id="local-auth">
+          <div class="login-auth-tabs" role="tablist" aria-label="Режим входа">
+            <button type="button" class="login-auth-tab login-auth-tab--active" data-tab="login" role="tab" aria-selected="true">
+              Вход
+            </button>
+            <button type="button" class="login-auth-tab" data-tab="register" role="tab" aria-selected="false">
+              Регистрация
+            </button>
+          </div>
+
+          <p id="local-msg" class="login-local-msg" style="display: none" role="alert"></p>
+
+          <div id="panel-login" class="login-auth-panel" role="tabpanel">
+            <form id="form-login" class="login-form login-form--aligned" autocomplete="on">
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Логин</span>
+                <input name="username" type="text" required minlength="3" maxlength="32" autocomplete="username" />
+              </label>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Пароль</span>
+                <input name="password" type="password" required minlength="1" autocomplete="current-password" />
+              </label>
+              <button type="submit" class="btn btn-primary login-submit">Войти</button>
+            </form>
+          </div>
+
+          <div id="panel-register" class="login-auth-panel" hidden role="tabpanel">
+            <form id="form-register" class="login-form login-form--aligned" autocomplete="on">
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Логин</span>
+                <div class="login-field-control">
+                  <input id="reg-username" name="username" type="text" required minlength="3" maxlength="32" autocomplete="username" pattern="[a-zA-Z0-9_.\-]{3,32}" title="Латиница, цифры, _ - ." />
+                  <p id="reg-username-hint" class="login-field-hint" style="display: none"></p>
+                </div>
+              </label>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Пароль</span>
+                <input name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" />
+              </label>
+              <label class="login-field login-field--grid">
+                <span class="login-field-label">Повтор пароля</span>
+                <input name="passwordRepeat" type="password" required minlength="8" maxlength="128" autocomplete="new-password" />
+              </label>
+              <p class="login-register-disclaimer">
+                <strong>Какие данные мы храним:</strong> почту, телефон и ФИО мы <strong>не собираем и не храним</strong>.
+                При входе по логину сохраняются только сам логин и необратимый хэш пароля; при входе через Яндекс или VK — технический
+                id аккаунта у провайдера. Восстановить пароль по e-mail нельзя — запишите его или пользуйтесь Яндекс&nbsp;/&nbsp;VK.
+              </p>
+              <button type="submit" class="btn btn-primary login-submit">Зарегистрироваться</button>
+            </form>
+          </div>
+          </div>
+        </div>
+
+        <p class="login-terms-line">
+          Продолжая вход или регистрацию (в том числе через Яндекс или VK), вы принимаете
+          <a href="/terms">пользовательское соглашение</a>.
+        </p>
+      </div>
     </div>
 
     <script>
       const api = (p, o = {}) => {
         const { headers: h, ...rest } = o;
+        const headers = { "ngrok-skip-browser-warning": "2048", ...(h || {}) };
+        const method = String(rest.method || "GET").toUpperCase();
+        if (rest.body && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+          headers["Content-Type"] = "application/json";
+        }
         return fetch(p, {
           credentials: "include",
           ...rest,
-          headers: { "ngrok-skip-browser-warning": "2048", ...(h || {}) },
+          headers,
         });
       };
 
@@ -57,7 +152,174 @@
         vk_denied: "Вход через VK отменён.",
         vk_state: "Сессия устарела. Попробуйте войти через VK снова.",
         vk_token: "Не удалось обменять код VK на токен.",
+        blocked: "Аккаунт заблокирован. Обратитесь в поддержку.",
       };
+
+      function messageForBlockedDetail(detail) {
+        if (!detail || typeof detail !== "object") return oauthErrors.blocked;
+        let s = detail.message || "Аккаунт заблокирован";
+        if (detail.username) s += " Логин: " + detail.username + ".";
+        if (detail.userId) s += " ID: " + detail.userId + ".";
+        else if (detail.identifier) s += " Идентификатор: " + detail.identifier + ".";
+        return s + " Обратитесь в поддержку.";
+      }
+
+      function nextUrl() {
+        const qp = new URLSearchParams(window.location.search);
+        const n = qp.get("next");
+        if (n && n.startsWith("/") && !n.startsWith("//")) return n;
+        return "/";
+      }
+
+      function showLocalMsg(text, isErr) {
+        const el = document.getElementById("local-msg");
+        el.style.display = "block";
+        el.textContent = text;
+        el.className = "login-local-msg" + (isErr ? " login-local-msg--err" : " login-local-msg--ok");
+      }
+
+      function hideLocalMsg() {
+        const el = document.getElementById("local-msg");
+        el.style.display = "none";
+        el.textContent = "";
+      }
+
+      const viewChoice = document.getElementById("view-choice");
+      const viewLocal = document.getElementById("view-local");
+      const btnShowLocal = document.getElementById("btn-show-local");
+      const btnBack = document.getElementById("btn-back-oauth");
+      let loginHasOAuth = false;
+
+      function openChoiceView() {
+        viewLocal.setAttribute("hidden", "");
+        viewChoice.removeAttribute("hidden");
+        hideLocalMsg();
+      }
+
+      function openLocalView() {
+        viewChoice.setAttribute("hidden", "");
+        viewLocal.removeAttribute("hidden");
+        if (loginHasOAuth) btnBack.removeAttribute("hidden");
+        else btnBack.setAttribute("hidden", "");
+      }
+
+      btnShowLocal.addEventListener("click", openLocalView);
+      btnBack.addEventListener("click", openChoiceView);
+
+      document.querySelectorAll(".login-auth-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const tab = btn.getAttribute("data-tab");
+          document.querySelectorAll(".login-auth-tab").forEach((b) => {
+            const on = b.getAttribute("data-tab") === tab;
+            b.classList.toggle("login-auth-tab--active", on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+          });
+          document.getElementById("panel-login").hidden = tab !== "login";
+          document.getElementById("panel-register").hidden = tab !== "register";
+          hideLocalMsg();
+        });
+      });
+
+      let checkTimer;
+      document.getElementById("reg-username")?.addEventListener("input", (e) => {
+        clearTimeout(checkTimer);
+        const hint = document.getElementById("reg-username-hint");
+        const v = e.target.value.trim();
+        if (v.length < 3) {
+          hint.style.display = "none";
+          return;
+        }
+        checkTimer = setTimeout(async () => {
+          try {
+            const r = await api("/api/auth/username-available?u=" + encodeURIComponent(v));
+            if (!r.ok) return;
+            const j = await r.json();
+            if (j.available) {
+              hint.style.display = "block";
+              hint.textContent = "Логин свободен";
+              hint.className = "login-field-hint login-field-hint--ok";
+            } else if (j.reason === "taken") {
+              hint.style.display = "block";
+              hint.textContent = "Этот логин уже занят";
+              hint.className = "login-field-hint login-field-hint--err";
+            } else {
+              hint.style.display = "none";
+            }
+          } catch {
+            /* ignore */
+          }
+        }, 400);
+      });
+
+      document.getElementById("form-login").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        hideLocalMsg();
+        const fd = new FormData(ev.target);
+        const body = {
+          username: String(fd.get("username") || "").trim(),
+          password: String(fd.get("password") || ""),
+        };
+        const r = await api("/api/auth/login-password", { method: "POST", body: JSON.stringify(body) });
+        if (r.ok) {
+          location.href = nextUrl();
+          return;
+        }
+        let msg = "Не удалось войти";
+        try {
+          const j = await r.json();
+          if (j.detail) {
+            if (Array.isArray(j.detail) && j.detail.length) {
+              const x = j.detail[0];
+              msg = (x && (x.msg || x.message)) || msg;
+            } else if (typeof j.detail === "string") {
+              msg = j.detail;
+            } else if (
+              typeof j.detail === "object" &&
+              j.detail !== null &&
+              j.detail.code === "ACCOUNT_BLOCKED"
+            ) {
+              msg = messageForBlockedDetail(j.detail);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        showLocalMsg(msg, true);
+      });
+
+      document.getElementById("form-register").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        hideLocalMsg();
+        const fd = new FormData(ev.target);
+        const username = String(fd.get("username") || "").trim();
+        const password = String(fd.get("password") || "");
+        const passwordRepeat = String(fd.get("passwordRepeat") || "");
+        if (password !== passwordRepeat) {
+          showLocalMsg("Пароли не совпадают", true);
+          return;
+        }
+        const body = { username, password, passwordRepeat };
+        const r = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
+        if (r.ok) {
+          location.href = nextUrl();
+          return;
+        }
+        let msg = "Ошибка регистрации";
+        try {
+          const j = await r.json();
+          if (j.detail) {
+            if (Array.isArray(j.detail) && j.detail.length) {
+              const x = j.detail[0];
+              msg = (x && (x.msg || x.message)) || msg;
+            } else if (typeof j.detail === "string") {
+              msg = j.detail;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        showLocalMsg(msg, true);
+      });
 
       async function init() {
         const qp = new URLSearchParams(window.location.search);
@@ -65,9 +327,20 @@
         if (oe) {
           const el = document.getElementById("oauth-err");
           el.style.display = "block";
-          el.textContent = oauthErrors[oe] || "Ошибка входа через соцсеть. Проверьте настройки OAuth в кабинете провайдера.";
+          if (oe === "blocked") {
+            const bid = qp.get("blocked_id");
+            const buid = qp.get("blocked_uid");
+            let s = "Аккаунт заблокирован.";
+            if (bid) s += " ID: " + decodeURIComponent(bid) + ".";
+            if (buid) s += " " + decodeURIComponent(buid) + ".";
+            el.textContent = s + " Обратитесь в поддержку.";
+          } else {
+            el.textContent = oauthErrors[oe] || "Ошибка входа через соцсеть.";
+          }
           const u = new URL(window.location.href);
           u.searchParams.delete("oauth_error");
+          u.searchParams.delete("blocked_uid");
+          u.searchParams.delete("blocked_id");
           const qs = u.searchParams.toString();
           history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : "") + u.hash);
         }
@@ -91,20 +364,24 @@
         }
 
         const hasOAuth = oauthYandex || oauthVk;
+        loginHasOAuth = hasOAuth;
+
         if (hasOAuth) {
-          document.getElementById("box-oauth").style.display = "block";
-          if (oauthYandex) {
-            document.getElementById("link-yandex").href = "/api/auth/oauth/yandex/start";
-          } else {
-            document.getElementById("link-yandex").style.display = "none";
-          }
-          if (oauthVk) {
-            document.getElementById("link-vk").href = "/api/auth/oauth/vk/start";
-          } else {
-            document.getElementById("link-vk").style.display = "none";
-          }
+          document.getElementById("oauth-row").style.display = "flex";
+          document.getElementById("login-or-divider").style.display = "flex";
+          document.getElementById("no-oauth-hint").style.display = "none";
+          if (oauthYandex) document.getElementById("link-yandex").href = "/api/auth/oauth/yandex/start";
+          else document.getElementById("link-yandex").style.display = "none";
+          if (oauthVk) document.getElementById("link-vk").href = "/api/auth/oauth/vk/start";
+          else document.getElementById("link-vk").style.display = "none";
+          viewChoice.removeAttribute("hidden");
+          viewLocal.setAttribute("hidden", "");
+          btnBack.setAttribute("hidden", "");
         } else {
-          document.getElementById("no-oauth-msg").style.display = "block";
+          document.getElementById("no-oauth-hint").style.display = "block";
+          viewChoice.setAttribute("hidden", "");
+          viewLocal.removeAttribute("hidden");
+          btnBack.setAttribute("hidden", "");
         }
       }
 

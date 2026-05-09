@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from .models import AiModel
+from .pricing_rub import openrouter_usd_to_balance_rub, rub_price_ceil_2
 
 # Ориентир выхода для проверки баланса до запроса (покрывает типичный ответ; факт после ответа может быть выше).
 _OUTPUT_RESERVE_TOKENS = 2048
@@ -14,8 +15,6 @@ _OUTPUT_RESERVE_MUSIC = 8192
 
 def estimate_min_spend_rub(model: AiModel, messages: list[dict[str, Any]]) -> Decimal:
     """Нижняя оценка стоимости одного ответа до вызова OpenRouter (вход + резерв выхода)."""
-    if model.is_free:
-        return Decimal("0")
     total_chars = 0
     image_parts = 0
     for msg in messages:
@@ -43,16 +42,27 @@ def estimate_min_spend_rub(model: AiModel, messages: list[dict[str, Any]]) -> De
     est = in_cost + out_cost
     if model.fixed_price is not None:
         est = max(est, Decimal(model.fixed_price))
-    return est
+    return rub_price_ceil_2(est)
 
 
 def compute_spend_rub(
     model: AiModel,
     usage: Optional[dict[str, Any]],
 ) -> Decimal:
-    if model.is_free:
-        return Decimal("0")
     u = usage or {}
+    # OpenRouter иногда отдаёт итог в USD в usage.cost — тот же пересчёт, что для видео и сидов цен.
+    raw_cost = u.get("cost")
+    if raw_cost is not None:
+        try:
+            usd = Decimal(str(raw_cost))
+            if usd > 0:
+                total = openrouter_usd_to_balance_rub(usd)
+                if model.fixed_price is not None:
+                    return rub_price_ceil_2(max(total, Decimal(model.fixed_price)))
+                return total
+        except Exception:
+            pass
+
     inp = int(u.get("prompt_tokens") or 0)
     out = int(u.get("completion_tokens") or 0)
 
@@ -61,5 +71,5 @@ def compute_spend_rub(
     total = in_cost + out_cost
 
     if model.fixed_price is not None:
-        return max(total, Decimal(model.fixed_price))
-    return total
+        return rub_price_ceil_2(max(total, Decimal(model.fixed_price)))
+    return rub_price_ceil_2(total)

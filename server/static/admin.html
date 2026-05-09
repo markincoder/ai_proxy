@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Админка — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=5" />
+    <title>Админка — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=48" />
     <style>
       .admin-shell {
         max-width: 72rem;
@@ -93,7 +93,8 @@
       }
       .admin-field input[type="text"],
       .admin-field input[type="number"],
-      .admin-field textarea {
+      .admin-field textarea,
+      .admin-field select {
         width: 100%;
         box-sizing: border-box;
         padding: 0.4rem 0.5rem;
@@ -120,27 +121,108 @@
         cursor: pointer;
         color: var(--text);
       }
-      .admin-actions {
+      .admin-user-actions {
         display: flex;
-        gap: 0.5rem;
-        margin-top: 1rem;
         flex-wrap: wrap;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      .admin-user-actions .btn {
+        font-size: 0.78rem;
+        padding: 0.25rem 0.5rem;
+      }
+      .admin-thread-pre {
+        max-height: 70vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.8rem;
+        line-height: 1.35;
+        margin: 0;
+        padding: 0.75rem;
+        background: var(--bg);
+        border-radius: 0.4rem;
+        border: 1px solid var(--border);
+      }
+      .admin-threads-list {
+        max-height: 60vh;
+        overflow: auto;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .admin-threads-list li {
+        border-bottom: 1px solid var(--border);
+        padding: 0.5rem 0.25rem;
+      }
+      .admin-threads-list button {
+        font: inherit;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        background: transparent;
+        border: none;
+        color: var(--accent);
+        padding: 0;
+      }
+      .admin-threads-list button:hover {
+        text-decoration: underline;
+      }
+      .admin-search-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .admin-search-row input[type="search"],
+      .admin-search-row input[type="text"] {
+        min-width: 12rem;
+        flex: 1;
+        max-width: 28rem;
+        padding: 0.4rem 0.5rem;
+        border-radius: 0.4rem;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
       }
     </style>
   </head>
   <body class="page-tariffs">
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
     <header class="top-nav" role="navigation" aria-label="Главное меню">
       <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">AI</span>
-        <span>AI Proxy</span>
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
       </a>
       <nav class="nav-links">
+        <a href="/news" class="nav-link">Новости</a>
         <a href="/" class="nav-link">Чат</a>
-        <a href="/tariffs" class="nav-link">Все модели</a>
-        <a href="/admin" class="nav-link active">Админка</a>
+        <a href="/tariffs" class="nav-link">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link">Настройки</a>
+        <a href="/admin" class="nav-link active" id="nav-admin" style="display: none">Админка</a>
       </nav>
       <div class="nav-actions">
-        <button type="button" class="btn" id="btn-logout">Выйти</button>
+        <span class="balance-pill" id="balance-wrap"
+          >Баланс <strong id="balance">—</strong></span
+        >
+        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
+        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
+        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
       </div>
     </header>
 
@@ -150,12 +232,17 @@
 
         <div id="admin-app">
         <p class="page-lead">
-          Редактирование карточек моделей в базе (описания, цены, флаги). Пользователи — просмотр балансов.
+          Редактирование карточек моделей в базе (описания, цены, флаги). Пользователи — баланс, просмотр диалогов, блокировка.
         </p>
 
         <div class="admin-tabs" role="tablist">
           <button type="button" class="admin-tab admin-tab--active" data-tab="models" id="tab-models">Модели</button>
           <button type="button" class="admin-tab" data-tab="users" id="tab-users">Пользователи</button>
+          <button type="button" class="admin-tab" data-tab="moderation" id="tab-moderation">Модерация</button>
+          <button type="button" class="admin-tab" data-tab="banner" id="tab-banner">Объявление</button>
+          <button type="button" class="admin-tab" data-tab="news" id="tab-news">Новости</button>
+          <button type="button" class="admin-tab" data-tab="errors" id="tab-errors">Лог ошибок</button>
+          <button type="button" class="admin-tab" data-tab="db" id="tab-db">База</button>
         </div>
 
         <section id="panel-models" class="admin-panel">
@@ -165,7 +252,7 @@
               <thead>
                 <tr>
                   <th>Название</th>
-                  <th>Slug</th>
+                  <th>Идентификатор</th>
                   <th>Цены ₽/1M</th>
                   <th>Активна</th>
                   <th></th>
@@ -178,17 +265,234 @@
 
         <section id="panel-users" class="admin-panel" hidden>
           <div id="users-err" class="err" style="display: none"></div>
+          <div class="admin-search-row">
+            <label for="users-search" class="visually-hidden">Поиск пользователя</label>
+            <input
+              type="search"
+              id="users-search"
+              placeholder="Поиск: ID, логин, VK id, Яндекс id…"
+              autocomplete="off"
+            />
+          </div>
           <div class="admin-table-wrap">
             <table class="admin-table" id="users-table">
               <thead>
                 <tr>
-                  <th>Телефон / имя</th>
+                  <th>Логин / OAuth</th>
                   <th>Баланс</th>
+                  <th>Статус</th>
                   <th>ID</th>
                   <th>Создан</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+          <div
+            style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border)"
+          >
+            <h2 class="page-title" style="font-size: 1rem; margin-bottom: 0.5rem">Старые диалоги</h2>
+            <p class="page-lead" style="font-size: 0.85rem; margin-bottom: 0.75rem">
+              Удаляются сохранённые чаты без активности дольше выбранного срока (по времени последнего изменения в БД,
+              UTC). Операция необратима; текущие открытые у пользователей диалоги на сервере не отслеживаются — при
+              следующей синхронизации исчезнут из истории.
+            </p>
+            <div class="admin-field" style="max-width: 22rem">
+              <label for="purge-months">Неактивны дольше чем</label>
+              <select id="purge-months">
+                <option value="1">1 месяц (~30 дней)</option>
+                <option value="3" selected>3 месяца (~90 дней)</option>
+                <option value="6">6 месяцев (~180 дней)</option>
+              </select>
+            </div>
+            <p id="purge-preview" style="font-size: 0.85rem; color: var(--muted); margin: 0.5rem 0 0; min-height: 1.2em"></p>
+            <div class="admin-actions" style="margin-top: 0.65rem; flex-wrap: wrap">
+              <button type="button" class="btn" id="btn-purge-preview">Показать, сколько удалится</button>
+              <button type="button" class="btn btn-primary" id="btn-purge-stale">Удалить такие диалоги</button>
+            </div>
+            <div id="purge-err" class="err" style="display: none; margin-top: 0.5rem"></div>
+          </div>
+        </section>
+
+        <section id="panel-banner" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Сообщение показывается всем посетителям вверху сайта (техработы, предупреждения). Снимите флажок «Показывать», чтобы скрыть.
+          </p>
+          <div id="banner-err" class="err" style="display: none; margin-bottom: 0.75rem"></div>
+          <div class="admin-checks" style="margin-bottom: 0.75rem">
+            <label>
+              <input type="checkbox" id="banner-active" />
+              Показывать объявление
+            </label>
+          </div>
+          <div class="admin-field">
+            <label for="banner-message">Текст объявления</label>
+            <textarea id="banner-message" rows="3" placeholder="Например: ведутся технические работы…"></textarea>
+          </div>
+          <div class="admin-field">
+            <label for="banner-schedule">Когда планируются работы</label>
+            <textarea id="banner-schedule" rows="2" placeholder="Например: 10 мая, 02:00–04:00 МСК"></textarea>
+          </div>
+          <div class="admin-actions" style="margin-top: 0.75rem">
+            <button type="button" class="btn btn-primary" id="btn-banner-save">Сохранить</button>
+          </div>
+        </section>
+
+        <section id="panel-news" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Новости на <a href="/news" target="_blank" rel="noopener">/news</a> — от новых к старым. Картинка: файл (до 5 МБ,
+            JPEG/PNG/GIF/WebP) или необязательная внешняя ссылка; загруженные файлы хранятся в каталоге на сервере
+            (<code>NEWS_UPLOAD_DIR</code>).
+          </p>
+          <div id="news-err" class="err" style="display: none; margin-bottom: 0.75rem"></div>
+          <h3 style="margin: 0 0 0.5rem; font-size: 1rem">Добавить новость</h3>
+          <form id="news-form" class="admin-news-form">
+            <div class="admin-field">
+              <label for="news-published">Дата и время публикации</label>
+              <input type="datetime-local" id="news-published" required />
+            </div>
+            <div class="admin-field">
+              <label for="news-title">Заголовок</label>
+              <input type="text" id="news-title" required maxlength="512" />
+            </div>
+            <div class="admin-field">
+              <label for="news-image-file">Картинка (необязательно)</label>
+              <input
+                type="file"
+                id="news-image-file"
+                accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+              />
+              <p id="news-image-upload-status" style="font-size: 0.8rem; color: var(--muted); margin: 0.35rem 0 0"></p>
+              <div id="news-image-preview-wrap" style="display: none; margin-top: 0.5rem">
+                <img
+                  id="news-image-preview"
+                  alt=""
+                  style="max-width: 16rem; max-height: 10rem; border-radius: 0.35rem; border: 1px solid var(--border)"
+                />
+              </div>
+              <button type="button" class="btn" id="btn-news-image-clear" style="margin-top: 0.5rem; display: none">
+                Убрать картинку
+              </button>
+            </div>
+            <div class="admin-field">
+              <label for="news-image-url-external">Или ссылка на изображение</label>
+              <input type="url" id="news-image-url-external" placeholder="https://…" />
+            </div>
+            <div class="admin-field">
+              <label for="news-body">Текст</label>
+              <textarea id="news-body" rows="8" required placeholder="Текст новости…"></textarea>
+            </div>
+            <div class="admin-actions">
+              <button type="submit" class="btn btn-primary">Опубликовать</button>
+            </div>
+          </form>
+          <h3 style="margin: 1.25rem 0 0.5rem; font-size: 1rem">Опубликованные</h3>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="news-table">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Заголовок</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="news-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-errors" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Неперехваченные исключения при обработке HTTP-запросов (время UTC в БД, текст — как в трейсе).
+          </p>
+          <div class="admin-search-row">
+            <button type="button" class="btn btn-primary" id="btn-errors-refresh">Обновить</button>
+            <button type="button" class="btn" id="btn-errors-clear">Очистить лог</button>
+          </div>
+          <div id="errors-err" class="err" style="display: none; margin-bottom: 0.75rem"></div>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="errors-table">
+              <thead>
+                <tr>
+                  <th>Время</th>
+                  <th>Запрос / контекст</th>
+                  <th>Тип</th>
+                  <th>Сообщение</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="errors-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-db" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Сначала при необходимости очищаются лог ошибок и старые чаты, затем выполняется обслуживание SQLite (VACUUM уменьшает файл БД после удалений; ANALYZE обновляет статистику).
+            VACUUM может на время замедлить запись в базу — лучше в период низкой нагрузки.
+          </p>
+          <div class="admin-checks" style="margin-bottom: 0.75rem">
+            <label>
+              <input type="checkbox" id="maint-clear-errors" />
+              Удалить все записи лога ошибок
+            </label>
+          </div>
+          <div class="admin-field" style="max-width: 22rem">
+            <label for="maint-stale-months">Удалить неактивные чаты старше</label>
+            <select id="maint-stale-months">
+              <option value="" selected>— не трогать чаты —</option>
+              <option value="1">1 мес (~30 дней)</option>
+              <option value="3">3 мес (~90 дней)</option>
+              <option value="6">6 мес (~180 дней)</option>
+            </select>
+          </div>
+          <div class="admin-checks" style="margin: 0.75rem 0">
+            <label>
+              <input type="checkbox" id="maint-vacuum" checked />
+              VACUUM (для SQLite — сжать файл; для PostgreSQL отдельная команда)
+            </label>
+            <label>
+              <input type="checkbox" id="maint-analyze" checked />
+              ANALYZE (обновить статистику)
+            </label>
+          </div>
+          <div class="admin-actions">
+            <button type="button" class="btn btn-primary" id="btn-db-maintain">Выполнить</button>
+          </div>
+          <div id="maint-err" class="err" style="display: none; margin-top: 0.75rem"></div>
+          <pre
+            id="maint-result"
+            class="admin-thread-pre"
+            style="margin-top: 0.75rem; display: none; max-height: 12rem"
+          ></pre>
+        </section>
+
+        <section id="panel-moderation" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Поиск по текстам сохранённых чатов. Базовый список слов задаётся в
+            <code>FORBIDDEN_MESSAGE_KEYWORDS</code> в .env (через запятую); ниже можно добавить слова для одного запуска
+            (логика объединяется).
+          </p>
+          <div class="admin-field" style="margin-bottom: 0.5rem">
+            <label for="mod-keywords">Дополнительные ключевые слова (через запятую)</label>
+            <input type="text" id="mod-keywords" placeholder="например: слово1, слово2" />
+          </div>
+          <button type="button" class="btn btn-primary" id="mod-scan">Искать в сообщениях</button>
+          <div id="mod-err" class="err" style="display: none; margin-top: 0.75rem"></div>
+          <p id="mod-summary" style="font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.35rem"></p>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="mod-table">
+              <thead>
+                <tr>
+                  <th>Слово</th>
+                  <th>Пользователь</th>
+                  <th>Чат</th>
+                  <th>Фрагмент</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="mod-tbody"></tbody>
             </table>
           </div>
         </section>
@@ -201,7 +505,7 @@
         <h2 id="model-dialog-title">Редактировать модель</h2>
         <input type="hidden" id="mf-id" />
         <div class="admin-field">
-          <label>Slug (только чтение)</label>
+          <label>Идентификатор модели (только чтение)</label>
           <input type="text" id="mf-slug" readonly />
         </div>
         <div class="admin-field">
@@ -250,7 +554,40 @@
       </form>
     </dialog>
 
-    <footer class="site-footer">AI Proxy · Админка</footer>
+    <dialog class="admin-modal" id="threads-dialog" aria-labelledby="threads-dialog-title">
+      <div class="admin-modal-inner">
+        <h2 id="threads-dialog-title">Диалоги пользователя</h2>
+        <p id="threads-dialog-user" style="font-size: 0.82rem; color: var(--muted); margin: 0 0 0.75rem"></p>
+        <ul class="admin-threads-list" id="threads-list"></ul>
+        <div class="admin-actions">
+          <button type="button" class="btn" id="threads-close">Закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="admin-modal" id="thread-detail-dialog" aria-labelledby="thread-detail-title" style="max-width: 48rem">
+      <div class="admin-modal-inner">
+        <h2 id="thread-detail-title">Содержимое чата</h2>
+        <p id="thread-detail-meta" style="font-size: 0.78rem; color: var(--muted); margin: 0 0 0.5rem"></p>
+        <pre class="admin-thread-pre" id="thread-detail-body"></pre>
+        <div class="admin-actions">
+          <button type="button" class="btn" id="thread-detail-close">Закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="admin-modal" id="error-log-dialog" aria-labelledby="error-log-dialog-title" style="max-width: 52rem">
+      <div class="admin-modal-inner">
+        <h2 id="error-log-dialog-title">Ошибка сервера</h2>
+        <p id="error-log-dialog-meta" style="font-size: 0.78rem; color: var(--muted); margin: 0 0 0.5rem"></p>
+        <pre class="admin-thread-pre" id="error-log-trace"></pre>
+        <div class="admin-actions">
+          <button type="button" class="btn" id="error-log-dialog-close">Закрыть</button>
+        </div>
+      </div>
+    </dialog>
+
+    <footer class="site-footer">II Proxy · Админка</footer>
 
     <script>
       const api = (path, opts) => fetch(path, { credentials: "include", ...opts });
@@ -260,6 +597,10 @@
         d.textContent = s == null ? "" : String(s);
         return d.innerHTML;
       }
+
+      let modelsCache = [];
+      let userSearchQ = "";
+      let userSearchTimer = null;
 
       async function gate() {
         const r = await api("/api/auth/me");
@@ -273,10 +614,42 @@
         return true;
       }
 
+      function formatMsgContent(c) {
+        if (c == null) return "";
+        if (typeof c === "string") return c;
+        if (Array.isArray(c)) {
+          return c
+            .map((p) => {
+              if (!p || typeof p !== "object") return JSON.stringify(p);
+              if (p.type === "text") return p.text || "";
+              if (p.type === "image_url") return "[изображение]";
+              if (p.type === "input_audio") return "[голосовое сообщение]";
+              return JSON.stringify(p);
+            })
+            .join(" ");
+        }
+        if (typeof c === "object") return JSON.stringify(c);
+        return String(c);
+      }
+
+      function renderThreadText(messages) {
+        if (!Array.isArray(messages)) return String(messages);
+        return messages
+          .map((m) => {
+            const role = (m && m.role) || "?";
+            const t = formatMsgContent(m && m.content);
+            return role + ": " + t;
+          })
+          .join("\n\n———\n\n");
+      }
+
       async function loadUsers() {
         const err = document.getElementById("users-err");
         err.style.display = "none";
-        const r = await api("/api/admin/users");
+        const qs = new URLSearchParams();
+        if (userSearchQ) qs.set("q", userSearchQ);
+        const url = "/api/admin/users" + (userSearchQ ? `?${qs.toString()}` : "");
+        const r = await api(url);
         if (!r.ok) {
           err.textContent = "Не удалось загрузить пользователей";
           err.style.display = "block";
@@ -292,17 +665,236 @@
             const oauthLine = oauth
               ? `<br/><span style="color:var(--muted);font-size:0.74rem">${esc(oauth)}</span>`
               : "";
+            const adm = u.isAdmin ? ` <span style="color:var(--muted);font-size:0.74rem">(админ)</span>` : "";
+            const blocked = u.isBlocked ? '<span style="color:#b91c1c">заблокирован</span>' : "активен";
+            const blkBtn = u.isBlocked
+              ? `<button type="button" class="btn" data-unblock="${esc(u.id)}">Разблокировать</button>`
+              : `<button type="button" class="btn" data-block="${esc(u.id)}">Заблокировать</button>`;
             return `<tr>
-                <td>${esc(u.phone || "—")}<br/><span style="color:var(--muted);font-size:0.78rem">${esc(u.name || "")}</span>${oauthLine}</td>
+                <td>${esc(u.username || "—")}${oauthLine}${adm}</td>
                 <td>${esc(u.balance)} ₽</td>
+                <td>${blocked}</td>
                 <td><code>${esc(u.id)}</code></td>
                 <td>${esc(u.createdAt || "—")}</td>
+                <td class="admin-user-actions">
+                  <button type="button" class="btn btn-primary" data-threads="${esc(u.id)}">Чаты</button>
+                  ${blkBtn}
+                </td>
               </tr>`;
           })
           .join("");
       }
 
-      let modelsCache = [];
+      document.getElementById("users-search").addEventListener("input", () => {
+        userSearchQ = document.getElementById("users-search").value.trim();
+        clearTimeout(userSearchTimer);
+        userSearchTimer = setTimeout(() => loadUsers(), 400);
+      });
+
+      async function refreshStalePreview() {
+        const months = parseInt(document.getElementById("purge-months").value, 10);
+        const p = document.getElementById("purge-preview");
+        const err = document.getElementById("purge-err");
+        err.style.display = "none";
+        p.textContent = "Подсчёт…";
+        const r = await api(`/api/admin/chat-threads/stale-preview?months=${months}`);
+        if (!r.ok) {
+          p.textContent = "";
+          err.textContent = "Не удалось получить данные";
+          err.style.display = "block";
+          return null;
+        }
+        const j = await r.json();
+        p.textContent = `К удалению: ${j.count} диалог(ов). Порог: без активности дольше ${j.daysInactiveAtLeast} суток (поле updated_at в БД раньше ${j.cutoffHuman}).`;
+        return j;
+      }
+
+      document.getElementById("btn-purge-preview").addEventListener("click", () => refreshStalePreview());
+
+      document.getElementById("purge-months").addEventListener("change", () => {
+        document.getElementById("purge-preview").textContent = "";
+        document.getElementById("purge-err").style.display = "none";
+      });
+
+      document.getElementById("btn-purge-stale").addEventListener("click", async () => {
+        const errEl = document.getElementById("purge-err");
+        errEl.style.display = "none";
+        const months = parseInt(document.getElementById("purge-months").value, 10);
+        const pr = await api(`/api/admin/chat-threads/stale-preview?months=${months}`);
+        if (!pr.ok) {
+          errEl.textContent = "Не удалось проверить количество";
+          errEl.style.display = "block";
+          return;
+        }
+        const preview = await pr.json();
+        if (preview.count === 0) {
+          alert("Нет диалогов, подходящих под условие.");
+          return;
+        }
+        const ok = confirm(
+          `Удалить безвозвратно ${preview.count} диалог(ов)?\nУсловие: без активности дольше ${preview.daysInactiveAtLeast} суток (updated_at раньше ${preview.cutoffHuman}).`,
+        );
+        if (!ok) return;
+        const r = await api("/api/admin/chat-threads/purge-stale", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ months }),
+        });
+        if (!r.ok) {
+          let t = "Ошибка удаления";
+          try {
+            const j = await r.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+          } catch {
+            try {
+              t = await r.text();
+            } catch {
+              /* ignore */
+            }
+          }
+          errEl.textContent = t;
+          errEl.style.display = "block";
+          return;
+        }
+        const out = await r.json();
+        alert(`Удалено диалогов: ${out.deleted}`);
+        await refreshStalePreview();
+      });
+
+      async function runModerationScan() {
+        const err = document.getElementById("mod-err");
+        const sum = document.getElementById("mod-summary");
+        const tb = document.getElementById("mod-tbody");
+        err.style.display = "none";
+        sum.textContent = "";
+        tb.innerHTML = "<tr><td colspan='5'>Загрузка…</td></tr>";
+        const extra = document.getElementById("mod-keywords").value.trim();
+        const qs = new URLSearchParams();
+        if (extra) qs.set("keywords", extra);
+        const r = await api("/api/admin/moderation/message-matches?" + qs.toString());
+        if (!r.ok) {
+          let t = "Ошибка запроса";
+          try {
+            const j = await r.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+          } catch {
+            /* ignore */
+          }
+          err.textContent = t;
+          err.style.display = "block";
+          tb.innerHTML = "";
+          return;
+        }
+        const data = await r.json();
+        const kw = data.keywordsUsed || [];
+        sum.textContent = `Совпадений: ${data.matchCount}. Ключевые слова (${kw.length}): ${kw.join(", ")}`;
+        const rows = data.matches || [];
+        if (!rows.length) {
+          tb.innerHTML = "<tr><td colspan='5'>Ничего не найдено</td></tr>";
+          return;
+        }
+        tb.innerHTML = rows
+          .map(
+            (m) =>
+              `<tr>
+                <td><code>${esc(m.matchedKeyword)}</code></td>
+                <td><code>${esc(m.userId)}</code></td>
+                <td>${esc(m.title || "—")}</td>
+                <td style="max-width:22rem;font-size:0.78rem">${esc(m.snippet || "")}</td>
+                <td><button type="button" class="btn" data-open-thread="${esc(m.threadId)}">Открыть</button></td>
+              </tr>`,
+          )
+          .join("");
+      }
+
+      document.getElementById("mod-scan").onclick = () => runModerationScan();
+
+      document.getElementById("mod-tbody").addEventListener("click", async (e) => {
+        const b = e.target.closest("button[data-open-thread]");
+        if (!b) return;
+        const tid = b.getAttribute("data-open-thread");
+        const r = await api(`/api/admin/threads/${encodeURIComponent(tid)}`);
+        if (!r.ok) {
+          alert("Не удалось загрузить чат");
+          return;
+        }
+        const data = await r.json();
+        document.getElementById("thread-detail-title").textContent = data.title || "Чат";
+        document.getElementById("thread-detail-meta").textContent =
+          `Модель: ${data.modelSlug || "—"} · user: ${data.userId} · обновлён: ${data.updatedAt || "—"}`;
+        document.getElementById("thread-detail-body").textContent = renderThreadText(data.messages);
+        document.getElementById("thread-detail-dialog").showModal();
+      });
+
+      async function openUserThreads(uid) {
+        document.getElementById("threads-dialog-user").textContent = `Пользователь ${uid}`;
+        const list = document.getElementById("threads-list");
+        list.innerHTML = "<li>Загрузка…</li>";
+        document.getElementById("threads-dialog").showModal();
+        const r = await api(`/api/admin/users/${encodeURIComponent(uid)}/threads`);
+        if (!r.ok) {
+          list.innerHTML = "<li>Не удалось загрузить список</li>";
+          return;
+        }
+        const threads = await r.json();
+        if (!threads.length) {
+          list.innerHTML = "<li>Нет сохранённых диалогов</li>";
+          return;
+        }
+        list.innerHTML = threads
+          .map(
+            (t) =>
+              `<li><button type="button" data-thread-detail="${esc(t.id)}">${esc(t.title || "Без названия")} <span style="color:var(--muted);font-size:0.75rem">(${t.messageCount}) · ${esc(t.modelSlug || "")}</span></button></li>`,
+          )
+          .join("");
+      }
+
+      document.getElementById("users-tbody").addEventListener("click", async (e) => {
+        const bTh = e.target.closest("button[data-threads]");
+        if (bTh) {
+          openUserThreads(bTh.getAttribute("data-threads"));
+          return;
+        }
+        const bBlock = e.target.closest("button[data-block]");
+        const bUnblock = e.target.closest("button[data-unblock]");
+        const uid = bBlock?.getAttribute("data-block") || bUnblock?.getAttribute("data-unblock");
+        if (!uid) return;
+        const blocked = !!bBlock;
+        if (!confirm(blocked ? "Заблокировать пользователя? Он потеряет доступ к API и чату." : "Снять блокировку?")) return;
+        const r = await api(`/api/admin/users/${encodeURIComponent(uid)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blocked }),
+        });
+        if (!r.ok) {
+          const tx = await r.text();
+          alert("Ошибка: " + tx);
+          return;
+        }
+        await loadUsers();
+      });
+
+      document.getElementById("threads-list").addEventListener("click", async (e) => {
+        const btn = e.target.closest("button[data-thread-detail]");
+        if (!btn) return;
+        const tid = btn.getAttribute("data-thread-detail");
+        const r = await api(`/api/admin/threads/${encodeURIComponent(tid)}`);
+        if (!r.ok) {
+          alert("Не удалось загрузить чат");
+          return;
+        }
+        const data = await r.json();
+        document.getElementById("thread-detail-title").textContent = data.title || "Чат";
+        document.getElementById("thread-detail-meta").textContent =
+          `Модель: ${data.modelSlug || "—"} · user: ${data.userId} · обновлён: ${data.updatedAt || "—"}`;
+        document.getElementById("thread-detail-body").textContent = renderThreadText(data.messages);
+        document.getElementById("thread-detail-dialog").showModal();
+      });
+
+      document.getElementById("threads-close").onclick = () =>
+        document.getElementById("threads-dialog").close();
+      document.getElementById("thread-detail-close").onclick = () =>
+        document.getElementById("thread-detail-dialog").close();
 
       function openEdit(m) {
         document.getElementById("mf-id").value = m.id;
@@ -395,7 +987,355 @@
         await loadModels();
       });
 
-      document.getElementById("mf-cancel").onclick = () => document.getElementById("model-dialog").close();
+      async function loadBanner() {
+        const err = document.getElementById("banner-err");
+        err.style.display = "none";
+        const r = await api("/api/admin/banner");
+        if (!r.ok) {
+          err.textContent = "Не удалось загрузить объявление";
+          err.style.display = "block";
+          return;
+        }
+        const b = await r.json();
+        document.getElementById("banner-active").checked = !!b.isActive;
+        document.getElementById("banner-message").value = (b.message != null && b.message) || "";
+        document.getElementById("banner-schedule").value = (b.scheduleText != null && b.scheduleText) || "";
+      }
+
+      document.getElementById("btn-banner-save").addEventListener("click", async () => {
+        const err = document.getElementById("banner-err");
+        err.style.display = "none";
+        const body = {
+          isActive: document.getElementById("banner-active").checked,
+          message: document.getElementById("banner-message").value,
+          scheduleText: document.getElementById("banner-schedule").value,
+        };
+        const r = await api("/api/admin/banner", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          let t = "Ошибка сохранения";
+          try {
+            const j = await r.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+          } catch {
+            try {
+              t = await r.text();
+            } catch {
+              /* ignore */
+            }
+          }
+          err.textContent = t;
+          err.style.display = "block";
+          return;
+        }
+        if (typeof window.refreshSiteBanner === "function") window.refreshSiteBanner();
+      });
+
+      let errorLogCache = [];
+
+      function shortText(s, max) {
+        const t = s == null ? "" : String(s);
+        if (t.length <= max) return esc(t);
+        return esc(t.slice(0, max)) + "…";
+      }
+
+      async function loadErrorLogs() {
+        const errEl = document.getElementById("errors-err");
+        const tbody = document.getElementById("errors-tbody");
+        errEl.style.display = "none";
+        tbody.innerHTML = "<tr><td colspan='5'>Загрузка…</td></tr>";
+        const r = await api("/api/admin/error-logs?limit=200");
+        if (!r.ok) {
+          errEl.textContent = "Не удалось загрузить лог";
+          errEl.style.display = "block";
+          tbody.innerHTML = "";
+          return;
+        }
+        errorLogCache = await r.json();
+        if (!errorLogCache.length) {
+          tbody.innerHTML = "<tr><td colspan='5'>Записей нет</td></tr>";
+          return;
+        }
+        tbody.innerHTML = errorLogCache
+          .map((row) => {
+            const msg = row.message || "—";
+            return `<tr>
+              <td style="white-space:nowrap;font-size:0.78rem">${esc(row.createdAt || "—")}</td>
+              <td style="max-width:18rem;font-size:0.78rem">${shortText(row.context, 140)}</td>
+              <td><code>${esc(row.errorType || "—")}</code></td>
+              <td style="max-width:14rem;font-size:0.78rem">${shortText(msg, 100)}</td>
+              <td><button type="button" class="btn btn-primary" data-error-trace="${esc(row.id)}">Трейс</button></td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      document.getElementById("errors-tbody").addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-error-trace]");
+        if (!b) return;
+        const id = b.getAttribute("data-error-trace");
+        const row = errorLogCache.find((x) => x.id === id);
+        if (!row) return;
+        document.getElementById("error-log-dialog-title").textContent = row.errorType || "Ошибка";
+        document.getElementById("error-log-dialog-meta").textContent =
+          (row.createdAt || "") + " · " + (row.context || "");
+        document.getElementById("error-log-trace").textContent = row.traceback || "";
+        document.getElementById("error-log-dialog").showModal();
+      });
+
+      document.getElementById("error-log-dialog-close").onclick = () =>
+        document.getElementById("error-log-dialog").close();
+
+      document.getElementById("btn-errors-refresh").onclick = () => loadErrorLogs();
+
+      document.getElementById("btn-errors-clear").onclick = async () => {
+        if (!confirm("Удалить все записи лога ошибок из базы?")) return;
+        const r = await api("/api/admin/error-logs", { method: "DELETE" });
+        if (!r.ok) {
+          alert("Не удалось очистить");
+          return;
+        }
+        await loadErrorLogs();
+      };
+
+      document.getElementById("btn-db-maintain").addEventListener("click", async () => {
+        const errEl = document.getElementById("maint-err");
+        const pre = document.getElementById("maint-result");
+        errEl.style.display = "none";
+        pre.style.display = "none";
+        pre.textContent = "";
+        const clearLogs = document.getElementById("maint-clear-errors").checked;
+        const staleRaw = document.getElementById("maint-stale-months").value;
+        const purgeMonths = staleRaw === "" ? null : parseInt(staleRaw, 10);
+        const vacuum = document.getElementById("maint-vacuum").checked;
+        const analyze = document.getElementById("maint-analyze").checked;
+        if (!clearLogs && purgeMonths === null && !vacuum && !analyze) {
+          errEl.textContent = "Отметьте хотя бы одно действие.";
+          errEl.style.display = "block";
+          return;
+        }
+        let msg = "Выполнить обслуживание базы?";
+        if (clearLogs) msg += "\n• удалить все записи лога ошибок";
+        if (purgeMonths != null) msg += `\n• удалить неактивные чаты старше ${purgeMonths} мес.`;
+        if (vacuum) msg += "\n• VACUUM";
+        if (analyze) msg += "\n• ANALYZE";
+        if (!confirm(msg)) return;
+        const r = await api("/api/admin/database/maintain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clearErrorLogs: clearLogs,
+            purgeStaleMonths: purgeMonths,
+            vacuum,
+            analyze,
+          }),
+        });
+        if (!r.ok) {
+          let t = "Ошибка";
+          try {
+            const j = await r.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+          } catch {
+            try {
+              t = await r.text();
+            } catch {
+              /* ignore */
+            }
+          }
+          errEl.textContent = t;
+          errEl.style.display = "block";
+          return;
+        }
+        const out = await r.json();
+        pre.textContent = JSON.stringify(out, null, 2);
+        pre.style.display = "block";
+        if (clearLogs) await loadErrorLogs();
+      });
+
+      let newsUploadedUrl = null;
+
+      function clearNewsImageUi() {
+        newsUploadedUrl = null;
+        const fi = document.getElementById("news-image-file");
+        if (fi) fi.value = "";
+        const st = document.getElementById("news-image-upload-status");
+        if (st) st.textContent = "";
+        const prevWrap = document.getElementById("news-image-preview-wrap");
+        if (prevWrap) prevWrap.style.display = "none";
+        const btnClear = document.getElementById("btn-news-image-clear");
+        if (btnClear) btnClear.style.display = "none";
+        const ext = document.getElementById("news-image-url-external");
+        if (ext) ext.value = "";
+      }
+
+      function pad2(n) {
+        return String(n).padStart(2, "0");
+      }
+      function localDatetimeValue(d) {
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      }
+
+      async function loadNews() {
+        const err = document.getElementById("news-err");
+        const tb = document.getElementById("news-tbody");
+        err.style.display = "none";
+        const r = await api("/api/admin/news");
+        if (!r.ok) {
+          err.textContent = "Не удалось загрузить новости";
+          err.style.display = "block";
+          tb.innerHTML = "";
+          return;
+        }
+        const rows = await r.json();
+        const pub = document.getElementById("news-published");
+        if (pub && !pub.dataset.touched) {
+          pub.value = localDatetimeValue(new Date());
+        }
+        if (!rows.length) {
+          tb.innerHTML = "<tr><td colspan=\"3\">Пока нет новостей</td></tr>";
+        } else {
+          tb.innerHTML = rows
+            .map((n) => {
+              const dt = n.publishedAt ? esc(n.publishedAt.replace("Z", " UTC")) : "—";
+              return `<tr>
+              <td style="white-space:nowrap;font-size:0.78rem">${dt}</td>
+              <td>${esc(n.title)}</td>
+              <td><button type="button" class="btn" data-news-del="${esc(n.id)}">Удалить</button></td>
+            </tr>`;
+            })
+            .join("");
+          tb.querySelectorAll("[data-news-del]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const id = btn.getAttribute("data-news-del");
+              if (!confirm("Удалить эту новость?")) return;
+              const dr = await api("/api/admin/news/" + encodeURIComponent(id), { method: "DELETE" });
+              if (!dr.ok) {
+                alert("Не удалось удалить");
+                return;
+              }
+              await loadNews();
+            });
+          });
+        }
+      }
+
+      const newsImageFileEl = document.getElementById("news-image-file");
+      if (newsImageFileEl) {
+        newsImageFileEl.addEventListener("change", async () => {
+          const inp = document.getElementById("news-image-file");
+          const st = document.getElementById("news-image-upload-status");
+          const prevWrap = document.getElementById("news-image-preview-wrap");
+          const prev = document.getElementById("news-image-preview");
+          const btnClear = document.getElementById("btn-news-image-clear");
+          newsUploadedUrl = null;
+          if (!inp.files || !inp.files[0]) {
+            if (st) st.textContent = "";
+            if (prevWrap) prevWrap.style.display = "none";
+            if (btnClear) btnClear.style.display = "none";
+            return;
+          }
+          if (st) st.textContent = "Загрузка…";
+          const fd = new FormData();
+          fd.append("file", inp.files[0]);
+          try {
+            const r = await fetch("/api/admin/news/upload-image", {
+              method: "POST",
+              body: fd,
+              credentials: "include",
+            });
+            if (!r.ok) {
+              let t = "Ошибка загрузки";
+              try {
+                const j = await r.json();
+                t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+              } catch {
+                try {
+                  t = await r.text();
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (st) st.textContent = t;
+              inp.value = "";
+              if (prevWrap) prevWrap.style.display = "none";
+              if (btnClear) btnClear.style.display = "none";
+              return;
+            }
+            const j = await r.json();
+            newsUploadedUrl = j.url || null;
+            if (st) st.textContent = newsUploadedUrl ? "Загружено." : "";
+            if (newsUploadedUrl && prev) {
+              prev.src = newsUploadedUrl;
+              if (prevWrap) prevWrap.style.display = "block";
+              if (btnClear) btnClear.style.display = "";
+            }
+          } catch {
+            if (st) st.textContent = "Сеть или сервер недоступны";
+            inp.value = "";
+            if (prevWrap) prevWrap.style.display = "none";
+            if (btnClear) btnClear.style.display = "none";
+          }
+        });
+      }
+      const btnNewsImageClear = document.getElementById("btn-news-image-clear");
+      if (btnNewsImageClear) {
+        btnNewsImageClear.addEventListener("click", () => clearNewsImageUi());
+      }
+
+      const newsPublishedEl = document.getElementById("news-published");
+      if (newsPublishedEl) {
+        newsPublishedEl.addEventListener("input", () => {
+          newsPublishedEl.dataset.touched = "1";
+        });
+      }
+
+      document.getElementById("news-form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = document.getElementById("news-err");
+        err.style.display = "none";
+        const dl = document.getElementById("news-published").value;
+        if (!dl) {
+          err.textContent = "Укажите дату";
+          err.style.display = "block";
+          return;
+        }
+        const d = new Date(dl);
+        const ext = document.getElementById("news-image-url-external").value.trim();
+        const imageUrl = ext || newsUploadedUrl || null;
+        const body = {
+          publishedAt: d.toISOString(),
+          title: document.getElementById("news-title").value.trim(),
+          imageUrl,
+          body: document.getElementById("news-body").value,
+        };
+        const r = await api("/api/admin/news", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          let t = "Ошибка";
+          try {
+            const j = await r.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+          } catch {
+            t = await r.text();
+          }
+          err.textContent = t;
+          err.style.display = "block";
+          return;
+        }
+        document.getElementById("news-title").value = "";
+        document.getElementById("news-body").value = "";
+        clearNewsImageUi();
+        const pe = document.getElementById("news-published");
+        pe.value = localDatetimeValue(new Date());
+        delete pe.dataset.touched;
+        await loadNews();
+      });
 
       document.querySelectorAll(".admin-tab").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -405,19 +1345,22 @@
           });
           document.getElementById("panel-models").hidden = tab !== "models";
           document.getElementById("panel-users").hidden = tab !== "users";
+          document.getElementById("panel-moderation").hidden = tab !== "moderation";
+          document.getElementById("panel-banner").hidden = tab !== "banner";
+          document.getElementById("panel-news").hidden = tab !== "news";
+          document.getElementById("panel-errors").hidden = tab !== "errors";
+          document.getElementById("panel-db").hidden = tab !== "db";
+          if (tab === "errors") loadErrorLogs();
+          if (tab === "news") loadNews();
         });
       });
-
-      document.getElementById("btn-logout").onclick = async () => {
-        await api("/api/auth/logout", { method: "POST" });
-        location.href = "/login";
-      };
 
       (async () => {
         const ok = await gate();
         if (!ok) return;
         await loadModels();
         await loadUsers();
+        await loadBanner();
       })();
     </script>
   </body>

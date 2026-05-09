@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 from urllib.parse import urlparse
 
@@ -15,19 +14,14 @@ from ..config import get_settings
 from ..deps import resolve_user_id
 from ..models import AiModel, Transaction
 from ..openrouter import openrouter_headers_get, video_generation_create, video_generation_get
+from ..pricing_rub import openrouter_usd_to_balance_rub
 from ..services.spend import assert_positive_balance, record_spend
 
 router = APIRouter(prefix="/api/v1/video", tags=["video"])
 
-# job_id OpenRouter → владелец и флаг бесплатной модели (in-memory; после рестарта воркера может не сработать)
+# job_id OpenRouter → владелец (in-memory; после рестарта воркера может не сработать)
 _job_owners: dict[str, str] = {}
-_job_free: dict[str, bool] = {}
 _charged_jobs: set[str] = set()
-
-# Ориентир: usage.cost у OpenRouter в USD; баланс в приложении в ₽.
-_VIDEO_USD_TO_RUB = Decimal("100")
-
-
 class CreateVideoJobBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -35,20 +29,12 @@ class CreateVideoJobBody(BaseModel):
     prompt: str
 
 
-def _usd_to_rub(usd: Any) -> Decimal:
-    return Decimal(str(usd)) * _VIDEO_USD_TO_RUB
-
-
 def _maybe_record_video_spend(
     db,
     user_id: str | None,
     job_id: str,
     data: dict[str, Any],
-    *,
-    model_is_free: bool = False,
 ) -> None:
-    if model_is_free:
-        return
     if not user_id:
         return
     if job_id in _charged_jobs:
@@ -61,7 +47,7 @@ def _maybe_record_video_spend(
     if db.query(Transaction).filter(Transaction.user_id == user_id, Transaction.description == desc).first():
         _charged_jobs.add(job_id)
         return
-    amount = _usd_to_rub(cost)
+    amount = openrouter_usd_to_balance_rub(cost)
     if amount <= 0:
         return
     record_spend(db, user_id, amount, None, desc)
@@ -72,19 +58,14 @@ def _maybe_record_video_spend(
 async def create_video_job(request: Request, body: CreateVideoJobBody):
     from ..database import SessionLocal
 
-    model_is_free = False
     with SessionLocal() as db:
         m = db.query(AiModel).filter(AiModel.slug == body.model_slug, AiModel.is_active.is_(True)).first()
         if not m or not m.supports_video_generation:
             raise HTTPException(status_code=400, detail="Not a video model")
-        model_is_free = bool(m.is_free)
-        if m.is_free:
-            user_id = resolve_user_id(request, db)
-        else:
-            user_id = resolve_user_id(request, db)
-            if not user_id:
-                raise HTTPException(status_code=401, detail="LOGIN_REQUIRED")
-            assert_positive_balance(db, user_id)
+        user_id = resolve_user_id(request, db)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="LOGIN_REQUIRED")
+        assert_positive_balance(db, user_id)
 
     resp = await video_generation_create({"model": body.model_slug, "prompt": body.prompt.strip()})
     if resp.status_code == 402:
@@ -104,7 +85,6 @@ async def create_video_job(request: Request, body: CreateVideoJobBody):
     jid = data.get("id")
     if isinstance(jid, str) and user_id:
         _job_owners[jid] = user_id
-        _job_free[jid] = model_is_free
 
     return data
 
@@ -130,13 +110,19 @@ async def get_video_job(request: Request, job_id: str):
                 raise HTTPException(status_code=403, detail="Forbidden")
         uid = user_id or owner
         if uid and data.get("status") == "completed":
-            _maybe_record_video_spend(
-                db,
-                uid,
-                job_id,
-                data,
-                model_is_free=bool(_job_free.get(job_id)),
-            )
+            _maybe_record_video_spend(db, uid, job_id, data)
+
+    # То же пересчёты, что при списании — для отображения в UI
+    if isinstance(data, dict):
+        usage_obj = data.get("usage")
+        if isinstance(usage_obj, dict):
+            raw_cost = usage_obj.get("cost")
+            if raw_cost is not None:
+                try:
+                    rub = openrouter_usd_to_balance_rub(raw_cost)
+                    data["costRub"] = format(rub, "f")
+                except Exception:
+                    pass
 
     return data
 

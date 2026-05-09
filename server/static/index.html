@@ -3,22 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Чат — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=13" />
+    <title>Чат — II Proxy</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/css/style.css?v=48" />
     <link
       rel="stylesheet"
       href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
     />
   </head>
   <body class="page-chat">
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
     <header class="top-nav" role="navigation" aria-label="Главное меню">
       <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">AI</span>
-        <span>AI Proxy</span>
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>II Proxy</span>
       </a>
       <nav class="nav-links">
+        <a href="/news" class="nav-link">Новости</a>
+        <a href="/docs" class="nav-link">API</a>
         <a href="/" class="nav-link active">Чат</a>
         <a href="/tariffs" class="nav-link">Тарифы</a>
+        <a href="/contact" class="nav-link">Связаться с нами</a>
+        <a href="/settings" class="nav-link" id="nav-settings">Настройки</a>
         <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
       </nav>
       <div class="nav-actions">
@@ -45,12 +52,6 @@
       <div class="app-main-column">
         <main class="main-shell main-shell--chat">
           <h1 class="page-title">Чат с нейросетями</h1>
-          <p class="page-lead">
-            Выберите категорию и модель сверху. Текст — в поле ниже; <strong>микрофон</strong> (удерживайте —
-            запись, отпустите — текст в поле) и <strong>вложение 📎</strong> — изображение или аудиофайл для
-            распознавания. Модели только с транскрипцией — вкладка «Транскрипция»; для ответа нейросети переключитесь
-            на диалоговую модель. История чатов — после входа, слева.
-          </p>
 
           <div class="chat-shell">
             <div
@@ -61,9 +62,26 @@
             ></div>
             <div id="err" class="err" style="display: none"></div>
             <div class="chat-area" id="messages"></div>
+            <div id="video-panel" class="video-panel" style="display: none">
+              <div class="input-row video-panel__row">
+                <input
+                  type="text"
+                  id="video-prompt"
+                  placeholder="Опишите сцену для ролика…"
+                  autocomplete="off"
+                  style="flex: 1"
+                />
+                <button type="button" class="btn btn-primary" id="btn-video">Создать видео</button>
+              </div>
+            </div>
             <form id="chat-form" class="composer" autocomplete="off">
               <input type="text" id="msg-input" placeholder="Напишите сообщение…" />
-              <input type="file" id="file-input" accept="image/*,audio/*" hidden />
+              <input
+                type="file"
+                id="file-input"
+                accept="image/*,audio/*,.mp3,.wav,.ogg,.webm,.m4a,.flac,.aac"
+                hidden
+              />
               <button
                 type="button"
                 class="btn btn-mic"
@@ -77,40 +95,29 @@
               <button type="button" class="btn" id="btn-attach" title="Прикрепить изображение или аудио">📎</button>
               <button type="submit" class="btn btn-primary">Отправить</button>
             </form>
-
-            <div id="video-panel" class="video-panel" style="display: none">
-              <p class="hint" style="margin: 0 0 0.75rem">
-                <strong>Видео</strong> — отдельный долгий запрос. Поле чата скрыто. Результат в плеере ниже.
-              </p>
-              <div class="input-row" style="margin: 0; padding: 0; border: none">
-                <input type="text" id="video-prompt" placeholder="Опишите сцену для ролика…" style="flex: 1" />
-                <button type="button" class="btn btn-primary" id="btn-video">Создать видео</button>
-              </div>
-              <p id="video-status" class="hint" style="margin-top: 0.65rem; min-height: 1.25rem"></p>
-              <pre id="video-debug" class="video-debug" aria-live="polite"></pre>
-              <video
-                id="video-player"
-                controls
-                playsinline
-                preload="metadata"
-                style="display: none; width: 100%; max-height: 24rem; border-radius: 0.75rem; border: 1px solid var(--border)"
-              ></video>
-            </div>
           </div>
 
-          <p id="img-gen-hint" class="hint footer-hint" style="display: none">
-            Модель с <strong>генерацией изображений</strong> — в чате создаётся <strong>статичная картинка</strong>, даже если в
-            запросе написано «видео». Настоящее видео — выберите Veo / Seedance / Sora в списке моделей.
-          </p>
-          <p id="stt-mode-hint" class="hint footer-hint" style="display: none">
-            Выбрана модель <strong>только распознавания речи</strong> (вкладка «Транскрипция»): микрофон и аудио во
-            вложении подставляют текст в поле. Чтобы получить ответ нейросети, переключитесь на модель из вкладки
-            «Текст и чат» или другую диалоговую.
-          </p>
-          <p class="hint footer-hint">
-            Бесплатные модели работают без входа; для платных нужен аккаунт и баланс. История чатов — после
-            входа.
-          </p>
+          <section class="chat-page-notes" aria-label="Справка и подсказки">
+            <p id="img-gen-hint" class="hint footer-hint" style="display: none">
+              Модель с <strong>генерацией изображений</strong> — в чате создаётся <strong>статичная картинка</strong>, даже если в
+              запросе написано «видео». Настоящее видео — выберите Veo / Seedance / Sora в списке моделей.
+            </p>
+            <p id="stt-mode-hint" class="hint footer-hint" style="display: none">
+              Выбрана модель <strong>только распознавания речи</strong> (вкладка «Транскрипция»): запись с микрофона или аудиофайл попадает в чат как текст и оплачивается по тарифу. Для диалога с нейросетью переключитесь на модель из «Текст и чат» или другую диалоговую.
+            </p>
+            <p id="music-text-hint" class="hint footer-hint" style="display: none">
+              Эта модель в категории «Музыка» рассчитана на <strong>текст</strong> (лирика, структура трека, промпты).
+              Чтобы получить <strong>готовое аудио</strong>, выберите в той же вкладке модель <strong>Lyria</strong> (Google) —
+              в общей строке карточек она стоит <strong>слева, перед текстовыми</strong> вариантами.
+            </p>
+            <p id="video-mode-hint" class="hint footer-hint" style="display: none">
+              Провайдер может отклонить и <strong>нейтральный</strong> запрос (политика контента, ложные срабатывания). Смените формулировку сцены или другую видео-модель.
+            </p>
+            <p class="hint footer-hint">
+              Бесплатные модели работают без входа; для платных нужен аккаунт и баланс. История чатов — после
+              входа.
+            </p>
+          </section>
         </main>
       </div>
     </div>
@@ -170,18 +177,8 @@
               </div>
             </div>
             <input type="hidden" name="ym_merchant_receipt" value="" />
-            <div class="ym-customer-info">
-              <div class="ym-block-title">О покупателе</div>
-              <input
-                name="cps_email"
-                class="ym-input ym-required-input"
-                placeholder="Email"
-                type="text"
-                value=""
-                required
-                autocomplete="email"
-              />
-            </div>
+            <!-- Email для чека ЮKassa: технический адрес, без сбора почты пользователя -->
+            <input type="hidden" name="cps_email" value="receipt@example.com" />
             <div class="ym-hidden-inputs">
               <input name="shopSuccessURL" type="hidden" value="" />
               <input name="shopFailURL" type="hidden" value="" />
@@ -220,7 +217,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script type="module" src="/static/js/chat.js?v=36"></script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
+    <script type="module" src="/static/js/chat.js?v=75"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

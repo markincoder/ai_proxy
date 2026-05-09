@@ -20,6 +20,10 @@ display_name, provider, description_ru, pricing_note_ru (если ключ за�
 
   python scripts/sync_openrouter_prices.py --no-copy   # только цены, без текстов карточек
 
+Только тексты карточек из JSON без OpenRouter и без пересчёта цен:
+  python scripts/sync_model_card_text.py
+  python scripts/sync_model_card_text.py --dry-run
+
 Перед чтением переменных подгружаются `.env`, `server/.env`, `web/.env`.
 """
 
@@ -29,7 +33,7 @@ import argparse
 import os
 import sys
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -40,8 +44,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from server.config import get_settings  # noqa: E402
-from server.database import SessionLocal, get_default_model_specs, _provider_from_seed_spec  # noqa: E402
+from server.database import (  # noqa: E402
+    SessionLocal,
+    apply_user_facing_from_specs,
+    get_default_model_specs,
+)
 from server.models import AiModel  # noqa: E402
+
+_RUB_CENT = Decimal("0.01")
+
+
+def _rub_ceil_2(d: Decimal) -> Decimal:
+    """₽ тарифов в каталоге: 2 знака, вверх (как в runtime pricing_rub)."""
+    return d.quantize(_RUB_CENT, rounding=ROUND_CEILING)
 
 
 # --- Benchmark USD / sec по карточкам OpenRouter (ориентир; при расхождениях обновите). ---
@@ -71,13 +86,6 @@ TRANSCRIPTION_USD_PER_MINUTE_FALLBACK: dict[str, Decimal] = {
     "openai/gpt-4o-mini-transcribe": Decimal("0.006"),
     "openai/whisper-large-v3": Decimal("0.009"),
     "openai/whisper-large-v3-turbo": Decimal("0.006"),
-    "google/chirp-3": Decimal("0.012"),
-    # Amazon Nova (ориентир; проверьте актуальный STT в кабинете OpenRouter перед продакшеном).
-    "amazon/nova-micro-v1": Decimal("0.003"),
-    "amazon/nova-lite-v1": Decimal("0.004"),
-    "amazon/nova-pro-v1": Decimal("0.008"),
-    "amazon/nova-premier-v1": Decimal("0.012"),
-    "amazon/nova-2-lite-v1": Decimal("0.005"),
 }
 
 # Lyria — фактическая оплата «за результат», не текстовые токены каталога; обновляет только fixed_price.
@@ -174,8 +182,8 @@ def compute_token_rub(
         if u_in is None and u_out is None:
             return None
     factor = usd_rub * mult
-    rub_in = ((u_in or Decimal(0)) * factor).quantize(Decimal("0.01"))
-    rub_out = ((u_out or Decimal(0)) * factor).quantize(Decimal("0.01"))
+    rub_in = _rub_ceil_2((u_in or Decimal(0)) * factor)
+    rub_out = _rub_ceil_2((u_out or Decimal(0)) * factor)
     return rub_in, rub_out
 
 
@@ -212,19 +220,19 @@ def _build_apply_for_slug(
         usd_sec = VIDEO_USD_PER_SEC.get(slug)
         if usd_sec is None:
             return None
-        rub_sec = (usd_sec * factor).quantize(Decimal("0.01"))
+        rub_sec = _rub_ceil_2(usd_sec * factor)
         return ApplyRow(slug=slug, input_price_per_mn=rub_sec, output_price_per_mn=Decimal("0"))
 
     pair = compute_token_rub(slug, models, usd_rub, mult)
 
     lyr = LYRIA_USD_PER_MEDIA_UNIT.get(slug)
     if lyr is not None:
-        converted = (lyr * factor).quantize(Decimal("0.01"))
+        converted = _rub_ceil_2(lyr * factor)
         sf = spec.get("fixed_price")
         if sf is None:
             fixed = converted
         else:
-            fixed = max(converted, _decimal_from_any(sf))
+            fixed = _rub_ceil_2(max(converted, _decimal_from_any(sf)))
         if pair is None or (pair[0] <= 0 and pair[1] <= 0):
             rin = _decimal_from_any(spec.get("input_price_per_mn"))
             rout = _decimal_from_any(spec.get("output_price_per_mn"))
@@ -241,9 +249,10 @@ def _build_apply_for_slug(
     if spec.get("supports_transcription"):
         tpm = TRANSCRIPTION_USD_PER_MINUTE_FALLBACK.get(slug)
         if tpm is not None:
-            rub_fb = (tpm * factor).quantize(Decimal("0.01"))
+            rub_fb = _rub_ceil_2(tpm * factor)
             seed_floor = _decimal_from_any(spec.get("input_price_per_mn"))
-            rub_min = max(rub_fb, seed_floor) if seed_floor > 0 else rub_fb
+            rub_min_raw = max(rub_fb, seed_floor) if seed_floor > 0 else rub_fb
+            rub_min = _rub_ceil_2(rub_min_raw)
             stale = pair is None or (pair[0] <= 0 and pair[1] <= 0)
             if stale:
                 return ApplyRow(slug=slug, input_price_per_mn=rub_min, output_price_per_mn=Decimal("0"))
@@ -257,52 +266,6 @@ def _build_apply_for_slug(
     if rin <= 0 and rout <= 0:
         return None
     return ApplyRow(slug=slug, input_price_per_mn=rin, output_price_per_mn=rout)
-
-
-def apply_user_facing_from_specs(db, *, dry_run: bool) -> tuple[int, int]:
-    """Подтянуть display_name, provider, description_ru, pricing_note_ru из сидов для существующих slug.
-
-    Возвращает (число обновлённых строк, число slug в сидах без строки в БД).
-    """
-    updated = 0
-    missing_slug = 0
-    for spec in get_default_model_specs():
-        slug = str(spec["slug"])
-        row = db.query(AiModel).filter(AiModel.slug == slug).first()
-        if row is None:
-            missing_slug += 1
-            continue
-        dn = str(spec["display_name"])
-        pr = _provider_from_seed_spec(spec)
-        desc: str | None
-        if "description_ru" in spec:
-            dr = spec.get("description_ru")
-            desc = str(dr) if dr is not None else None
-        else:
-            desc = row.description_ru
-        note: str | None
-        if "pricing_note_ru" in spec:
-            pn = spec.get("pricing_note_ru")
-            note = str(pn) if pn is not None else None
-        else:
-            note = row.pricing_note_ru
-        changed = (
-            row.display_name != dn
-            or row.provider != pr
-            or row.description_ru != desc
-            or row.pricing_note_ru != note
-        )
-        if not changed:
-            continue
-        updated += 1
-        if dry_run:
-            print(f"[copy] {slug}: обновить display/provider/описание/пояснение тарифа")
-            continue
-        row.display_name = dn
-        row.provider = pr
-        row.description_ru = desc
-        row.pricing_note_ru = note
-    return updated, missing_slug
 
 
 def main() -> None:
