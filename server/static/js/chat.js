@@ -1,6 +1,7 @@
-import { consumeStream } from "./sse.js?v=19";
+import { consumeStream } from "./sse.js?v=20";
 
 const MODEL_STORAGE_KEY = "ai_proxy_model_slug";
+const STT_STORAGE_KEY = "ai_proxy_stt_slug";
 /** Выставляется на /tariffs при выборе модели — чат не подменяет её моделью из старого диалога. */
 const MODEL_EXPLICIT_CHOICE_KEY = "ai_proxy_explicit_model";
 
@@ -167,7 +168,7 @@ function modelBrandIconUrl(slug) {
 }
 
 /**
- * Понятные подсказки к ответам OpenRouter в потоке.
+ * Понятные подсказки к ответам модели в потоке.
  * Для :free чаще бывает «Provider returned error» — общая очередь и лимиты у провайдера.
  */
 function humanizeOpenRouterStreamError(detail, opts = {}) {
@@ -181,7 +182,7 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
   const low = m.toLowerCase();
   if (low.includes("provider returned error")) {
     if (isFree) {
-      return "На бесплатных моделях OpenRouter ответ идёт через общую очередь: провайдер временно недоступен или перегружен. Подождите минуту, повторите запрос или переключитесь на платную модель.";
+      return "На бесплатных моделях ответ идёт через общую очередь: провайдер временно недоступен или перегружен. Подождите минуту, повторите запрос или переключитесь на платную модель.";
     }
     return "Провайдер модели вернул ошибку (лимит, перегрузка или сбой канала). Попробуйте другую модель или повторите запрос позже.";
   }
@@ -210,6 +211,7 @@ async function main() {
   const cfg = await api("/api/config").then((r) => r.json());
   const models = await api("/api/models").then((r) => r.json());
   const chatModels = models.filter(isChatSelectableModel);
+  const sttModels = models.filter((m) => m.supportsTranscription === true);
 
   const balanceEl = document.getElementById("balance");
   const modelPickerEl = document.getElementById("model-picker");
@@ -571,7 +573,7 @@ async function main() {
         const desc =
           typeof m.descriptionRu === "string" && m.descriptionRu.trim()
             ? m.descriptionRu.trim()
-            : `${m.provider}. Модель через OpenRouter.`;
+            : `${m.provider}. Детали и цены — в разделе «Все модели».`;
         btn.setAttribute(
           "title",
           `${m.displayName} — ${m.provider} (${m.slug})`,
@@ -725,6 +727,47 @@ async function main() {
     }
   }
 
+  function selectedSttSlug() {
+    const sel = document.getElementById("stt-model");
+    if (sel && sel.value) return sel.value;
+    return "openai/whisper-1";
+  }
+
+  function initSttSelect() {
+    const sel = document.getElementById("stt-model");
+    if (!sel || sttModels.length === 0) return;
+    sel.innerHTML = "";
+    const sorted = [...sttModels].sort((a, b) =>
+      String(a.displayName).localeCompare(String(b.displayName), "ru"),
+    );
+    for (const m of sorted) {
+      const o = document.createElement("option");
+      o.value = m.slug;
+      o.textContent = m.displayName;
+      sel.appendChild(o);
+    }
+    let saved = "";
+    try {
+      saved = sessionStorage.getItem(STT_STORAGE_KEY) || "";
+    } catch {
+      saved = "";
+    }
+    if (saved && sttModels.some((x) => x.slug === saved)) {
+      sel.value = saved;
+    } else {
+      const w = sttModels.find((x) => x.slug === "openai/whisper-1");
+      sel.value = w ? w.slug : sttModels[0].slug;
+    }
+    sel.addEventListener("change", () => {
+      try {
+        sessionStorage.setItem(STT_STORAGE_KEY, sel.value);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+  initSttSelect();
+
   const imgGenHintEl = document.getElementById("img-gen-hint");
   function updateHints() {
     const m = selectedModel();
@@ -739,6 +782,10 @@ async function main() {
       const vid = m.supportsVideoGeneration === true;
       videoPanelEl.style.display = vid ? "block" : "none";
       formEl.style.display = vid ? "none" : "";
+      const voiceTb = document.getElementById("voice-toolbar");
+      if (voiceTb) {
+        voiceTb.style.display = vid ? "none" : "";
+      }
       if (vid) {
         formEl.setAttribute("inert", "");
         const ae = document.activeElement;
@@ -786,15 +833,22 @@ async function main() {
     typing.textContent = "Печатает…";
     const md = document.createElement("div");
     md.className = "md";
+    const audioOut = document.createElement("audio");
+    audioOut.className = "assistant-audio";
+    audioOut.controls = true;
+    audioOut.preload = "none";
+    audioOut.style.display = "none";
+    audioOut.setAttribute("aria-label", "Голосовой ответ модели");
     const cost = document.createElement("div");
     cost.className = "cost";
     bubble.appendChild(typing);
     bubble.appendChild(md);
+    bubble.appendChild(audioOut);
     bubble.appendChild(cost);
     wrap.appendChild(bubble);
     listEl.appendChild(wrap);
     listEl.scrollTop = listEl.scrollHeight;
-    return { md, cost, typing };
+    return { md, cost, typing, audioOut };
   }
 
   let currentConversationId = null;
@@ -1054,9 +1108,10 @@ async function main() {
       errEl.style.display = "none";
       streaming = true;
       setSidebarBusy(true);
-      const { md, cost, typing } = appendAssistantShell();
+      const { md, cost, typing, audioOut } = appendAssistantShell();
       let acc = "";
       const imageUrls = [];
+      const audioParts = [];
       function renderAssistantHtml() {
         let html = renderMd(acc);
         for (const u of imageUrls) {
@@ -1154,7 +1209,25 @@ async function main() {
           md.innerHTML = renderAssistantHtml();
           listEl.scrollTop = listEl.scrollHeight;
         },
+        undefined,
+        (aud) => {
+          if (aud?.data) audioParts.push(aud.data);
+        },
       );
+
+      if (audioOut && audioParts.length > 0) {
+        try {
+          const b64 = audioParts.join("");
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const blobA = new Blob([bytes], { type: "audio/wav" });
+          audioOut.src = URL.createObjectURL(blobA);
+          audioOut.style.display = "block";
+        } catch (e) {
+          console.warn("[chat] assistant audio decode", e);
+        }
+      }
 
       const asst = { role: "assistant", content: acc };
       if (imageUrls.length) asst.imageUrls = imageUrls;
@@ -1166,6 +1239,165 @@ async function main() {
       await persistThread();
     } catch (e) {
       console.error("[chat] runChat", e);
+      errEl.textContent = "Ошибка";
+      errEl.style.display = "block";
+      await persistThread();
+    } finally {
+      streaming = false;
+      setSidebarBusy(false);
+    }
+  }
+
+  async function runVoiceMultipart(blob, filename, mime) {
+    const m0 = selectedModel();
+    if (!m0 || m0.supportsVideoGeneration === true) return;
+    if (m0.isFree !== true && isGuest) {
+      errEl.textContent =
+        "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
+      errEl.style.display = "block";
+      return;
+    }
+    try {
+      errEl.textContent = "";
+      errEl.style.display = "none";
+      streaming = true;
+      setSidebarBusy(true);
+      const { md, cost, typing, audioOut } = appendAssistantShell();
+      let acc = "";
+      let userTranscriptShown = false;
+      const imageUrls = [];
+      const audioParts = [];
+      function renderAssistantHtml() {
+        let html = renderMd(acc);
+        for (const u of imageUrls) {
+          html += `<p class="gen-img-wrap"><img src="${u}" alt="Сгенерированное изображение" class="gen-image" loading="lazy" decoding="async" /></p>`;
+        }
+        return html;
+      }
+
+      const fd = new FormData();
+      fd.append("audio", blob, filename);
+      fd.append("modelSlug", m0.slug);
+      fd.append("sttModel", selectedSttSlug());
+      fd.append("messages", JSON.stringify(messagesForRequest()));
+      fd.append("stream", "true");
+
+      const res = await api("/api/v1/messages", { method: "POST", body: fd });
+
+      if (res.status === 401) {
+        let msg = "Войдите в аккаунт, чтобы пользоваться платными моделями.";
+        try {
+          const j = await res.json();
+          if (j.detail && j.detail !== "LOGIN_REQUIRED") msg = "Требуется вход.";
+        } catch {
+          /* use default */
+        }
+        errEl.textContent = msg;
+        errEl.style.display = "block";
+        typing.remove();
+        await persistThread();
+        return;
+      }
+      if (res.status === 402) {
+        let msg = "Недостаточно средств на балансе для этого запроса.";
+        try {
+          const j = await res.json();
+          const d = j.detail;
+          if (d && typeof d === "object" && d.estimatedMinRub != null) {
+            msg = `На балансе не хватает на расчётный минимум (~${Number(
+              d.estimatedMinRub,
+            ).toLocaleString("ru-RU", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 4,
+            })} ₽). Пополните баланс.`;
+          }
+        } catch {
+          /* use default */
+        }
+        errEl.textContent = msg;
+        errEl.style.display = "block";
+        typing.remove();
+        await persistThread();
+        return;
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        console.error("[chat /messages voice]", res.status, j);
+        errEl.textContent = "Ошибка распознавания или ответа.";
+        errEl.style.display = "block";
+        typing.remove();
+        await persistThread();
+        return;
+      }
+
+      await consumeStream(
+        res.body.getReader(),
+        (delta) => {
+          acc += delta;
+          typing.remove();
+          md.innerHTML = renderAssistantHtml();
+          listEl.scrollTop = listEl.scrollHeight;
+        },
+        (rub) => {
+          cost.textContent = `Стоимость запроса: ${Number(rub).toLocaleString("ru-RU", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 4,
+          })} ₽`;
+        },
+        (detail) => {
+          const mod = selectedModel();
+          const msg = humanizeOpenRouterStreamError(
+            typeof detail === "string" ? detail : "",
+            { isFree: mod?.isFree === true },
+          );
+          errEl.textContent = msg;
+          errEl.style.display = "block";
+          typing.remove();
+        },
+        (images) => {
+          for (const item of images || []) {
+            const u = item?.image_url?.url;
+            if (typeof u === "string" && u && !imageUrls.includes(u)) imageUrls.push(u);
+          }
+          typing.remove();
+          md.innerHTML = renderAssistantHtml();
+          listEl.scrollTop = listEl.scrollHeight;
+        },
+        (transcriptText) => {
+          if (userTranscriptShown) return;
+          appendUserBubble(transcriptText);
+          history.push({ role: "user", content: transcriptText });
+          userTranscriptShown = true;
+        },
+        (aud) => {
+          if (aud?.data) audioParts.push(aud.data);
+        },
+      );
+
+      if (audioOut && audioParts.length > 0) {
+        try {
+          const b64 = audioParts.join("");
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const blobA = new Blob([bytes], { type: "audio/wav" });
+          audioOut.src = URL.createObjectURL(blobA);
+          audioOut.style.display = "block";
+        } catch (e) {
+          console.warn("[chat] assistant audio decode (voice)", e);
+        }
+      }
+
+      const asst = { role: "assistant", content: acc };
+      if (imageUrls.length) asst.imageUrls = imageUrls;
+      history.push(asst);
+      typing.remove();
+
+      const me2 = await api("/api/auth/me").then((r) => r.json());
+      if (!me2.guest && me2.balance != null) refreshBalance(me2.balance);
+      await persistThread();
+    } catch (e) {
+      console.error("[chat] runVoiceMultipart", e);
       errEl.textContent = "Ошибка";
       errEl.style.display = "block";
       await persistThread();
@@ -1303,6 +1535,18 @@ async function main() {
           /* ignore */
         }
         const terminalBad = new Set(["failed", "cancelled", "expired"]);
+        const VIDEO_STEP_RU = {
+          queued: "в очереди",
+          pending: "ожидание",
+          processing: "генерация",
+          running: "генерация",
+          started: "генерация",
+          in_progress: "генерация",
+          completed: "готово",
+          failed: "ошибка",
+          cancelled: "отменено",
+          expired: "истекло",
+        };
         const poll = async () => {
           try {
             const pr = await api(`/api/v1/video/jobs/${encodeURIComponent(jobId)}`);
@@ -1318,7 +1562,9 @@ async function main() {
               return;
             }
             const status = st.status;
-            videoStatusEl.textContent = `Статус: ${status || "…"}`;
+            const step =
+              VIDEO_STEP_RU[String(status || "").toLowerCase()] || status || "…";
+            videoStatusEl.textContent = `Этап: ${step}`;
             if (terminalBad.has(status)) {
               videoFail("job terminal error", st);
               return;
@@ -1327,7 +1573,7 @@ async function main() {
               const hasFile =
                 Array.isArray(st.unsigned_urls) && st.unsigned_urls.length > 0;
               if (hasFile) {
-                /* Прямой URL на openrouter.ai в <video> не работает: нет Bearer. Тянем через наш прокси. */
+                /* Прямой URL провайдера в <video> без токена не работает — тянем через наш прокси. */
                 const streamUrl = `/api/v1/video/jobs/${encodeURIComponent(jobId)}/content?index=0`;
                 videoPlayerEl.src = streamUrl;
                 videoPlayerEl.style.display = "block";
@@ -1349,6 +1595,80 @@ async function main() {
         videoFail("handler uncaught", e);
       }
     };
+  }
+
+  const btnMic = document.getElementById("btn-mic");
+  const btnAudioFile = document.getElementById("btn-audio-file");
+  const audioFileInput = document.getElementById("audio-file-input");
+  let mediaRecorder = null;
+  let recChunks = [];
+
+  if (btnMic) {
+    btnMic.addEventListener("click", async () => {
+      if (streaming) return;
+      const mod = selectedModel();
+      if (!mod || mod.supportsVideoGeneration === true) return;
+      if (mod.isFree !== true && isGuest) {
+        errEl.textContent =
+          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
+        errEl.style.display = "block";
+        return;
+      }
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recChunks = [];
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+        mediaRecorder.ondataavailable = (ev) => {
+          if (ev.data.size > 0) recChunks.push(ev.data);
+        };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          btnMic.classList.remove("btn-mic--recording");
+          btnMic.setAttribute("aria-pressed", "false");
+          const blob = new Blob(recChunks, {
+            type: mediaRecorder.mimeType || "audio/webm",
+          });
+          if (blob.size < 32) return;
+          await ensureConversation();
+          await runVoiceMultipart(blob, "voice.webm", blob.type || "audio/webm");
+        };
+        mediaRecorder.start();
+        btnMic.classList.add("btn-mic--recording");
+        btnMic.setAttribute("aria-pressed", "true");
+      } catch {
+        errEl.textContent = "Не удалось получить доступ к микрофону.";
+        errEl.style.display = "block";
+      }
+    });
+  }
+
+  if (btnAudioFile && audioFileInput) {
+    btnAudioFile.addEventListener("click", () => {
+      if (streaming) return;
+      audioFileInput.click();
+    });
+    audioFileInput.addEventListener("change", async () => {
+      const f = audioFileInput.files?.[0];
+      audioFileInput.value = "";
+      if (!f || streaming) return;
+      const mod = selectedModel();
+      if (!mod || mod.supportsVideoGeneration === true) return;
+      if (mod.isFree !== true && isGuest) {
+        errEl.textContent =
+          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
+        errEl.style.display = "block";
+        return;
+      }
+      await ensureConversation();
+      await runVoiceMultipart(f, f.name, f.type || "application/octet-stream");
+    });
   }
 
   formEl.addEventListener("submit", async (e) => {

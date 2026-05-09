@@ -1,4 +1,4 @@
-/** Разбор SSE OpenRouter + event:billing в конце. onImages — чанки с delta.images (генерация картинок). */
+/** Разбор SSE OpenRouter + event:billing + user_transcript + delta.audio */
 
 function extractOpenRouterErrorMessage(j) {
   const e = j?.error;
@@ -15,11 +15,23 @@ function extractOpenRouterErrorMessage(j) {
   }
 }
 
-export async function consumeStream(reader, onDelta, onBilling, onStreamError, onImages) {
+/**
+ * @param onUserTranscript — multipart голос: сервер присылает распознанный текст до стрима ответа
+ * @param onAudioDelta — { data?: string, transcript?: string } чанки base64 аудио (голосовой ответ модели)
+ */
+export async function consumeStream(
+  reader,
+  onDelta,
+  onBilling,
+  onStreamError,
+  onImages,
+  onUserTranscript,
+  onAudioDelta,
+) {
   const dec = new TextDecoder();
   let carry = "";
   let expectBilling = false;
-  /** Не дублировать onStreamError на каждый повторяющийся чанк с error. */
+  let expectUserTranscript = false;
   let streamErrorReported = false;
 
   while (true) {
@@ -32,6 +44,12 @@ export async function consumeStream(reader, onDelta, onBilling, onStreamError, o
       const line = raw.replace(/\r$/, "");
       if (line === "event: billing") {
         expectBilling = true;
+        expectUserTranscript = false;
+        continue;
+      }
+      if (line === "event: user_transcript") {
+        expectUserTranscript = true;
+        expectBilling = false;
         continue;
       }
       if (expectBilling && line.startsWith("data: ")) {
@@ -44,6 +62,18 @@ export async function consumeStream(reader, onDelta, onBilling, onStreamError, o
         expectBilling = false;
         continue;
       }
+      if (expectUserTranscript && line.startsWith("data: ")) {
+        expectUserTranscript = false;
+        try {
+          const j = JSON.parse(line.slice(6));
+          if (j.text != null && typeof onUserTranscript === "function") {
+            onUserTranscript(String(j.text));
+          }
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
       if (!line.startsWith("data: ")) continue;
       const payload = line.slice(6).trim();
       if (payload === "[DONE]") continue;
@@ -51,7 +81,6 @@ export async function consumeStream(reader, onDelta, onBilling, onStreamError, o
         const j = JSON.parse(payload);
         if (j.error) {
           const detail = extractOpenRouterErrorMessage(j) || "Ошибка";
-          /* В консоль не спамим: текст уже в UI. Полный объект: sessionStorage.debugOpenRouter = "1" */
           try {
             if (typeof sessionStorage !== "undefined" && sessionStorage.debugOpenRouter) {
               console.warn("[OpenRouter SSE]", detail, j);
@@ -82,6 +111,10 @@ export async function consumeStream(reader, onDelta, onBilling, onStreamError, o
         const imgs = delta?.images;
         if (Array.isArray(imgs) && imgs.length && typeof onImages === "function") {
           onImages(imgs);
+        }
+        const audd = delta?.audio;
+        if (audd && typeof onAudioDelta === "function") {
+          onAudioDelta(audd);
         }
         const d = delta?.content;
         if (d) onDelta(d);

@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from typing import Any, AsyncIterator
 
 import httpx
@@ -23,6 +24,86 @@ from ..services.spend import assert_balance_covers_estimate, record_spend
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 _VOICE_PLACEHOLDER_CHARS = 4000
+_MAX_AUDIO_BYTES = 25 * 1024 * 1024
+_DEFAULT_STT_SLUG = "openai/whisper-1"
+
+
+def _estimate_transcribe_floor_rub(stt: AiModel) -> Decimal:
+    """STT в БД — ориентир ₽/мин аудио; доля минуты как нижняя оценка одного запроса."""
+    if stt.is_free:
+        return Decimal("0")
+    pm = Decimal(str(stt.input_price_per_mn or 0))
+    if pm <= 0:
+        return Decimal("0.01")
+    return max(pm / Decimal("6"), Decimal("0.01"))
+
+
+def _resolve_user_for_voice_session(
+    request: Request,
+    db: Session,
+    chat_model: AiModel,
+    stt_model: AiModel | None,
+    messages_for_estimate: list[dict[str, Any]],
+) -> str | None:
+    """Сессия и баланс на ответ чата и при голосе — на транскрипцию."""
+    est_chat = (
+        Decimal("0")
+        if chat_model.is_free
+        else estimate_min_spend_rub(chat_model, messages_for_estimate)
+    )
+    est_stt = (
+        _estimate_transcribe_floor_rub(stt_model)
+        if stt_model is not None and not stt_model.is_free
+        else Decimal("0")
+    )
+    total = est_chat + est_stt
+    if total <= 0 and chat_model.is_free:
+        return resolve_user_id(request, db)
+    uid = resolve_user_id(request, db)
+    if not uid:
+        raise HTTPException(
+            status_code=401,
+            detail="LOGIN_REQUIRED",
+        )
+    assert_balance_covers_estimate(db, uid, total)
+    return uid
+
+
+async def _transcribe_and_bill(
+    user_id: str | None,
+    stt: AiModel,
+    content: bytes,
+    filename: str,
+    mime: str,
+) -> str:
+    try:
+        tr = await transcribe_audio(content, filename, mime, stt.slug)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Провайдер недоступен (сеть/прокси). Попробуйте OPENROUTER_HTTPX_TRUST_ENV=false. {exc}",
+        ) from exc
+    if tr.status_code >= 400:
+        raise HTTPException(status_code=502, detail=tr.text)
+
+    tr_json = tr.json()
+    text = (tr_json.get("text") or "").strip()
+    usage = tr_json.get("usage")
+    cost = compute_spend_rub(stt, usage if isinstance(usage, dict) else None)
+    if cost <= 0 and user_id and not stt.is_free:
+        cost = _estimate_transcribe_floor_rub(stt)
+    if user_id and cost and cost > 0:
+        rid = tr_json.get("id")
+        rid_s = str(rid) if rid is not None else None
+        with SessionLocal() as db:
+            record_spend(
+                db,
+                user_id,
+                cost,
+                rid_s,
+                f"transcribe {stt.slug}",
+            )
+    return text
 
 
 class Msg(BaseModel):
@@ -85,6 +166,48 @@ def _resolve_user_for_model(
     return uid
 
 
+@router.post("/transcribe")
+async def post_transcribe_only(request: Request) -> JSONResponse:
+    """Распознавание аудио в текст без вызова чата."""
+    form = await request.form()
+    audio = form.get("audio")
+    stt_slug = str(form.get("sttModel") or _DEFAULT_STT_SLUG).strip() or _DEFAULT_STT_SLUG
+    if audio is None or not hasattr(audio, "read"):
+        raise HTTPException(status_code=400, detail="audio file required")
+    content = await audio.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="audio file required")
+    if len(content) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="audio file too large")
+    mime = getattr(audio, "content_type", None) or "application/octet-stream"
+    raw_name = getattr(audio, "filename", None) or "audio.bin"
+    safe_name = str(raw_name).replace("\\", "/").split("/")[-1][:220] or "audio.bin"
+
+    with SessionLocal() as db:
+        stt = (
+            db.query(AiModel)
+            .filter(AiModel.slug == stt_slug, AiModel.is_active.is_(True))
+            .first()
+        )
+        if not stt or not stt.supports_transcription:
+            raise HTTPException(status_code=404, detail="Unknown or inactive STT model")
+        est = _estimate_transcribe_floor_rub(stt) if not stt.is_free else Decimal("0")
+        if est > 0:
+            uid = resolve_user_id(request, db)
+            if not uid:
+                raise HTTPException(
+                    status_code=401,
+                    detail="LOGIN_REQUIRED",
+                )
+            assert_balance_covers_estimate(db, uid, est)
+            user_id = uid
+        else:
+            user_id = resolve_user_id(request, db)
+
+    text = await _transcribe_and_bill(user_id, stt, content, safe_name, mime)
+    return JSONResponse(content={"text": text})
+
+
 @router.post("/messages")
 async def post_messages(request: Request):
     ct = (request.headers.get("content-type") or "").lower()
@@ -111,6 +234,7 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
     form = await request.form()
     audio = form.get("audio")
     model_slug = str(form.get("modelSlug") or "")
+    stt_slug = str(form.get("sttModel") or _DEFAULT_STT_SLUG).strip() or _DEFAULT_STT_SLUG
     messages_raw = str(form.get("messages") or "[]")
     stream = str(form.get("stream") or "true").lower() != "false"
 
@@ -118,6 +242,18 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
         msgs = json.loads(messages_raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid messages JSON") from None
+
+    if audio is None or not hasattr(audio, "read"):
+        raise HTTPException(status_code=400, detail="audio file required")
+    content = await audio.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="audio file required")
+    if len(content) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="audio file too large")
+
+    mime = getattr(audio, "content_type", None) or "audio/webm"
+    raw_name = getattr(audio, "filename", None) or "voice.webm"
+    safe_name = str(raw_name).replace("\\", "/").split("/")[-1][:220] or "voice.webm"
 
     with SessionLocal() as db:
         model = (
@@ -127,35 +263,38 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
         )
         if not model:
             raise HTTPException(status_code=404, detail="Unknown or inactive model")
+        stt = (
+            db.query(AiModel)
+            .filter(AiModel.slug == stt_slug, AiModel.is_active.is_(True))
+            .first()
+        )
+        if not stt or not stt.supports_transcription:
+            raise HTTPException(status_code=404, detail="Unknown or inactive STT model")
         msgs_for_est = list(msgs) + [{"role": "user", "content": "…" * _VOICE_PLACEHOLDER_CHARS}]
-        user_id = _resolve_user_for_model(request, db, model, msgs_for_est)
+        user_id = _resolve_user_for_voice_session(request, db, model, stt, msgs_for_est)
 
-    if audio is None or not hasattr(audio, "read"):
-        raise HTTPException(status_code=400, detail="audio file required")
-    content = await audio.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="audio file required")
-    mime = getattr(audio, "content_type", None) or "audio/webm"
-
-    try:
-        tr = await transcribe_audio(content, "voice.webm", mime)
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"OpenRouter недоступен (сеть/прокси). Попробуйте OPENROUTER_HTTPX_TRUST_ENV=false. {exc}",
-        ) from exc
-    if tr.status_code >= 400:
-        raise HTTPException(status_code=502, detail=tr.text)
-
-    tr_json = tr.json()
-    text = (tr_json.get("text") or "").strip()
+    text = await _transcribe_and_bill(user_id, stt, content, safe_name, mime)
     msgs.append({"role": "user", "content": text})
     body = ChatJsonBody(
         model_slug=model_slug,
         messages=[Msg.model_validate(m) for m in msgs],
         stream=stream,
     )
-    return await _handle_chat_json(body, user_id, model)
+    inner = await _handle_chat_json(body, user_id, model)
+    if isinstance(inner, JSONResponse):
+        return inner
+
+    async def prepend_transcript() -> AsyncIterator[bytes]:
+        meta = json.dumps({"text": text}, ensure_ascii=False)
+        yield f"event: user_transcript\ndata: {meta}\n\n".encode()
+        async for chunk in inner.body_iterator:
+            yield chunk
+
+    return StreamingResponse(
+        prepend_transcript(),
+        media_type=inner.media_type,
+        headers=dict(inner.headers),
+    )
 
 
 async def _handle_chat_json(
@@ -170,6 +309,9 @@ async def _handle_chat_json(
     }
     if model.supports_image_generation:
         payload["modalities"] = ["image", "text"]
+    elif model.supports_speech:
+        payload["modalities"] = ["text", "audio"]
+        payload["audio"] = {"voice": "alloy", "format": "wav"}
 
     if not body.stream:
         try:

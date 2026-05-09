@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Модели и тарифы — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=5" />
+    <link rel="stylesheet" href="/static/css/style.css?v=7" />
   </head>
   <body class="page-tariffs">
     <header class="top-nav" role="navigation" aria-label="Главное меню">
@@ -29,14 +29,14 @@
       <h1 class="page-title">Все модели и тарифы</h1>
       <p class="page-lead">
         Разбивка по типам. Текстовые модели — в основном по токенам (вход / выход за 1M). Видео, картинки в чате и аудио
-        имеют отдельную логику у OpenRouter; подробности в карточке.
+        считаются по своим правилам; подробности в карточке модели.
       </p>
 
       <div class="tariffs-tabs" role="tablist" aria-label="Категории моделей" id="tariffs-tablist"></div>
       <div id="tariffs-panels"></div>
     </main>
 
-    <footer class="site-footer">AI Proxy · OpenRouter</footer>
+    <footer class="site-footer">AI Proxy</footer>
 
     <script>
       const MODEL_GROUPS = [
@@ -82,9 +82,43 @@
         }
         if (m.isFree) {
           html +=
-            '<p class="tariff-price-line"><strong>0 ₽</strong> — бесплатный канал OpenRouter.</p>';
+            '<p class="tariff-price-line"><strong>0 ₽</strong> — бесплатный канал (ограничения и очереди на стороне сервиса).</p>';
           return html;
         }
+
+        /* Только STT: число во входном поле — ориентир ₽ за минуту входного аудио. */
+        if (
+          m.supportsTranscription &&
+          !m.capabilities?.videoGeneration &&
+          !m.capabilities?.imageGeneration &&
+          !m.supportsSpeech
+        ) {
+          html +=
+            '<p class="tariff-price-line">Ориентир: <strong>' +
+            fmt(m.inputPricePerMn) +
+            " ₽</strong> за минуту входного аудио (распознавание).</p>";
+          html +=
+            '<p class="tariff-price-hint">Тариф задаёт провайдер; это не текстовые токены completions.</p>';
+          return html;
+        }
+
+        /* Видео: секунды готового ролика; число входа — ориентир ₽/с, не ₽ за 1M чат-токенов. */
+        if (m.capabilities?.videoGeneration) {
+          const rubPerSec = Number(m.inputPricePerMn);
+          if (rubPerSec > 0) {
+            html +=
+              '<p class="tariff-price-line">Ориентир: <strong>' +
+              fmt(rubPerSec) +
+              " ₽</strong> за одну секунду длительности готового ролика.</p>";
+          } else {
+            html +=
+              '<p class="tariff-price-line">Стоимость — по факту после генерации: за длительность готового ролика по ставке провайдера (ориентир ₽/с появится в таблице, когда тариф подтянут на сервер).</p>';
+          }
+          html +=
+            '<p class="tariff-price-hint">Итоговая сумма на балансе — после завершения генерации; разрешение и звук влияют на цену за секунду.</p>';
+          return html;
+        }
+
         html += `
           <ul class="tariff-token-prices">
             <li>Вход: ${fmt(m.inputPricePerMn)} ₽ / 1M токенов</li>
@@ -92,10 +126,7 @@
             ${m.fixedPrice != null ? `<li>Фикс (редко для чата): ${fmt(m.fixedPrice)} ₽</li>` : ""}
           </ul>
         `;
-        if (m.capabilities?.videoGeneration) {
-          html +=
-            '<p class="tariff-price-hint">Видео: итоговая сумма зависит от длительности, разрешения и опций (звук и т.д.), не только от таблицы токенов.</p>';
-        } else if (
+        if (
           m.capabilities?.imageGeneration &&
           !m.pricingNoteRu
         ) {
@@ -113,7 +144,7 @@
         }
         if (m.capabilities?.transcription && !m.isFree) {
           html +=
-            '<p class="tariff-price-hint">Транскрипция: не chat completions, тариф у провайдера за аудио (см. OpenRouter).</p>';
+            '<p class="tariff-price-hint">Транскрипция — отдельный режим; тариф за аудио задаёт провайдер.</p>';
         }
         return html;
       }
@@ -186,7 +217,7 @@
                 !m.capabilities?.videoGeneration &&
                 !m.isFree;
               const chatFooter = sttOnly
-                ? '<p class="tariff-price-hint">Не для списка моделей чата: endpoint <code>/audio/transcriptions</code>; голосовой ввод в приложении идёт через сервер.</p>'
+                ? '<p class="tariff-price-hint">Отдельный API распознавания; голосовой ввод в приложении обрабатывается на сервере.</p>'
                 : `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>`;
               art.innerHTML = `
                 <div class="tariff-card-head">

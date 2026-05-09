@@ -1252,3 +1252,53 @@ input[type="number"] {
 .pay-modal__panel .ym-customer-info {
   margin-top: 0.5rem;
 }
+
+/* Голос: STT, микрофон, аудиоответ */
+.voice-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.voice-toolbar-label {
+  font-size: 0.8125rem;
+  color: var(--fg-soft);
+  white-space: nowrap;
+}
+
+.voice-stt-select {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+  max-width: 22rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  font: inherit;
+  font-size: 0.875rem;
+  background: #fff;
+}
+
+.btn-mic--recording {
+  animation: voice-mic-pulse 1s ease-in-out infinite;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+@keyframes voice-mic-pulse {
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.assistant-audio {
+  width: 100%;
+  max-width: 28rem;
+  margin-top: 0.5rem;
+}

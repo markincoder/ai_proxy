@@ -65,12 +65,17 @@ async def video_generation_get(job_id: str) -> httpx.Response:
         )
 
 
-async def transcribe_audio(content: bytes, filename: str, mime: str) -> httpx.Response:
+async def transcribe_audio(
+    content: bytes,
+    filename: str,
+    mime: str,
+    model: str = "openai/whisper-1",
+) -> httpx.Response:
     s = get_settings()
     if not s.openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
     files = {"file": (filename, content, mime)}
-    data = {"model": "openai/whisper-1"}
+    data = {"model": model}
     async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
         return await client.post(
             f"{OPENROUTER_URL}/audio/transcriptions",
