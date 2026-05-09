@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Чат — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=11" />
+    <link rel="stylesheet" href="/static/css/style.css?v=13" />
     <link
       rel="stylesheet"
       href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
@@ -46,8 +46,10 @@
         <main class="main-shell main-shell--chat">
           <h1 class="page-title">Чат с нейросетями</h1>
           <p class="page-lead">
-            Выберите модель и напишите запрос (или запишите голос / загрузите аудио — сверху выберите модель
-            распознавания). История сохраняется — можно вернуться к прошлым диалогам слева.
+            Выберите категорию и модель сверху. Текст — в поле ниже; <strong>микрофон</strong> (удерживайте —
+            запись, отпустите — текст в поле) и <strong>вложение 📎</strong> — изображение или аудиофайл для
+            распознавания. Модели только с транскрипцией — вкладка «Транскрипция»; для ответа нейросети переключитесь
+            на диалоговую модель. История чатов — после входа, слева.
           </p>
 
           <div class="chat-shell">
@@ -58,20 +60,21 @@
               aria-label="Выбор модели"
             ></div>
             <div id="err" class="err" style="display: none"></div>
-            <div class="voice-toolbar" id="voice-toolbar">
-              <label class="voice-toolbar-label" for="stt-model">Распознавание</label>
-              <select id="stt-model" class="voice-stt-select" aria-label="Модель распознавания речи"></select>
-              <button type="button" class="btn btn-mic" id="btn-mic" title="Запись голоса" aria-pressed="false">
-                🎤
-              </button>
-              <button type="button" class="btn" id="btn-audio-file" title="Загрузить аудио">📼 Аудио</button>
-              <input type="file" id="audio-file-input" accept="audio/*" hidden />
-            </div>
             <div class="chat-area" id="messages"></div>
             <form id="chat-form" class="composer" autocomplete="off">
               <input type="text" id="msg-input" placeholder="Напишите сообщение…" />
-              <input type="file" id="file-input" accept="image/*" hidden />
-              <button type="button" class="btn" id="btn-attach" title="Прикрепить изображение">📎</button>
+              <input type="file" id="file-input" accept="image/*,audio/*" hidden />
+              <button
+                type="button"
+                class="btn btn-mic"
+                id="btn-mic"
+                title="Удерживайте для записи; отпустите — распознать речь в текст"
+                aria-label="Микрофон: удерживать для записи"
+                aria-pressed="false"
+              >
+                🎤
+              </button>
+              <button type="button" class="btn" id="btn-attach" title="Прикрепить изображение или аудио">📎</button>
               <button type="submit" class="btn btn-primary">Отправить</button>
             </form>
 
@@ -98,6 +101,11 @@
           <p id="img-gen-hint" class="hint footer-hint" style="display: none">
             Модель с <strong>генерацией изображений</strong> — в чате создаётся <strong>статичная картинка</strong>, даже если в
             запросе написано «видео». Настоящее видео — выберите Veo / Seedance / Sora в списке моделей.
+          </p>
+          <p id="stt-mode-hint" class="hint footer-hint" style="display: none">
+            Выбрана модель <strong>только распознавания речи</strong> (вкладка «Транскрипция»): микрофон и аудио во
+            вложении подставляют текст в поле. Чтобы получить ответ нейросети, переключитесь на модель из вкладки
+            «Текст и чат» или другую диалоговую.
           </p>
           <p class="hint footer-hint">
             Бесплатные модели работают без входа; для платных нужен аккаунт и баланс. История чатов — после
@@ -212,7 +220,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script type="module" src="/static/js/chat.js?v=33"></script>
+    <script type="module" src="/static/js/chat.js?v=36"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

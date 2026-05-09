@@ -14,7 +14,7 @@ usd_per_unit * 1e6 * OPENROUTER_USD_RUB * PRICING_MARKUP_MULT.
   python scripts/sync_openrouter_prices.py           # печать + обновить БД
   python scripts/sync_openrouter_prices.py --dry-run   # только печать
 
-После цен обновляет из сидов (`server/database.py`) карточки моделей:
+После цен обновляет из каталога (`server/data/default_model_specs.json`) карточки моделей:
 display_name, provider, description_ru, pricing_note_ru (если ключ задан в сиде)
 для строк, которые уже есть в `ai_models`.
 
@@ -39,7 +39,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from server.database import SessionLocal, DEFAULT_MODEL_SPECS, _provider_from_seed_spec  # noqa: E402
+from server.config import get_settings  # noqa: E402
+from server.database import SessionLocal, get_default_model_specs, _provider_from_seed_spec  # noqa: E402
 from server.models import AiModel  # noqa: E402
 
 
@@ -145,7 +146,8 @@ def _usd_in_out_from_modalities(pr: dict[str, Any]) -> tuple[Decimal | None, Dec
 
 
 def fetch_models_map() -> dict[str, dict]:
-    r = httpx.get("https://openrouter.ai/api/v1/models", timeout=120.0)
+    base = get_settings().openrouter_api_base_url.rstrip("/")
+    r = httpx.get(f"{base}/models", timeout=120.0)
     r.raise_for_status()
     return {m["id"]: m for m in r.json().get("data", [])}
 
@@ -156,7 +158,7 @@ def compute_token_rub(
     usd_rub: Decimal,
     mult: Decimal,
 ) -> tuple[Decimal, Decimal] | None:
-    if slug == "openrouter/free":
+    if slug == get_settings().openrouter_free_router_slug:
         return Decimal("0"), Decimal("0")
     m = models.get(slug)
     if not m:
@@ -264,7 +266,7 @@ def apply_user_facing_from_specs(db, *, dry_run: bool) -> tuple[int, int]:
     """
     updated = 0
     missing_slug = 0
-    for spec in DEFAULT_MODEL_SPECS:
+    for spec in get_default_model_specs():
         slug = str(spec["slug"])
         row = db.query(AiModel).filter(AiModel.slug == slug).first()
         if row is None:
@@ -323,7 +325,7 @@ def main() -> None:
     updates: list[ApplyRow] = []
     missing: list[str] = []
 
-    for spec in DEFAULT_MODEL_SPECS:
+    for spec in get_default_model_specs():
         slug = str(spec["slug"])
         if spec.get("is_free"):
             continue
@@ -365,7 +367,7 @@ def main() -> None:
             n_copy, n_absent = apply_user_facing_from_specs(db, dry_run=False)
             if n_absent:
                 print(
-                    f"\n[copy] в БД нет {n_absent} slug из сидов — пропущены (создаются при init_db/seed_models)."
+                    f"\n[copy] в БД нет {n_absent} slug из каталога — пропущены (добавляются при init_db)."
                 )
         db.commit()
         print(f"\nSQLite/Postgres: updated ai_models rows: {len(updates)}.")

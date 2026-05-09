@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
     openrouter_site_url: str = Field(default="http://localhost:8000", validation_alias="OPENROUTER_SITE_URL")
     openrouter_app_title: str = Field(default="AI Proxy", validation_alias="OPENROUTER_APP_TITLE")
+    openrouter_api_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        validation_alias="OPENROUTER_API_BASE_URL",
+    )
+    openrouter_free_router_slug: str = Field(default="openrouter/free", validation_alias="OPENROUTER_FREE_ROUTER_SLUG")
+    thread_model_fallback_slug: str = Field(default="openai/gpt-4o", validation_alias="THREAD_MODEL_FALLBACK_SLUG")
+    removed_openrouter_slugs: str = Field(default="", validation_alias="REMOVED_OPENROUTER_SLUGS")
     # true: httpx использует HTTP(S)_PROXY из окружения. false — прямой выход (если ConnectError/TLS через прокси).
     httpx_trust_env_openrouter: str = Field(default="true", validation_alias="OPENROUTER_HTTPX_TRUST_ENV")
 

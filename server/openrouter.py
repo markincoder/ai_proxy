@@ -5,7 +5,9 @@ import httpx
 
 from .config import get_settings
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
+
+def openrouter_base_url() -> str:
+    return get_settings().openrouter_api_base_url.rstrip("/")
 
 
 def _client_timeout(*, connect: float = 30.0, total: float = 300.0) -> httpx.Timeout:
@@ -42,7 +44,7 @@ def openrouter_headers_get() -> dict[str, str]:
 async def chat_completions(body: dict[str, Any]) -> httpx.Response:
     async with openrouter_async_client() as client:
         return await client.post(
-            f"{OPENROUTER_URL}/chat/completions",
+            f"{openrouter_base_url()}/chat/completions",
             headers=openrouter_headers(True),
             json=body,
         )
@@ -51,7 +53,7 @@ async def chat_completions(body: dict[str, Any]) -> httpx.Response:
 async def video_generation_create(body: dict[str, Any]) -> httpx.Response:
     async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
         return await client.post(
-            f"{OPENROUTER_URL}/videos",
+            f"{openrouter_base_url()}/videos",
             headers=openrouter_headers(True),
             json=body,
         )
@@ -60,7 +62,7 @@ async def video_generation_create(body: dict[str, Any]) -> httpx.Response:
 async def video_generation_get(job_id: str) -> httpx.Response:
     async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
         return await client.get(
-            f"{OPENROUTER_URL}/videos/{job_id}",
+            f"{openrouter_base_url()}/videos/{job_id}",
             headers=openrouter_headers_get(),
         )
 
@@ -78,7 +80,7 @@ async def transcribe_audio(
     data = {"model": model}
     async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
         return await client.post(
-            f"{OPENROUTER_URL}/audio/transcriptions",
+            f"{openrouter_base_url()}/audio/transcriptions",
             headers={
                 "Authorization": f"Bearer {s.openrouter_api_key}",
                 "HTTP-Referer": s.openrouter_site_url,

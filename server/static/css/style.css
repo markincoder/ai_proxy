@@ -1302,3 +1302,10 @@ input[type="number"] {
   max-width: 28rem;
   margin-top: 0.5rem;
 }
+
+/* Микрофон в строке композера: удержание без скролла страницы */
+.page-chat .composer .btn-mic {
+  flex-shrink: 0;
+  touch-action: none;
+  min-width: 2.75rem;
+}

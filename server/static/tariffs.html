@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Модели и тарифы — AI Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=7" />
+    <link rel="stylesheet" href="/static/css/style.css?v=12" />
   </head>
   <body class="page-tariffs">
     <header class="top-nav" role="navigation" aria-label="Главное меню">
@@ -28,8 +28,10 @@
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
       <p class="page-lead">
-        Разбивка по типам. Текстовые модели — в основном по токенам (вход / выход за 1M). Видео, картинки в чате и аудио
-        считаются по своим правилам; подробности в карточке модели.
+        Разбивка по типам. Текстовые модели — в основном по токенам (вход / выход за 1M).
+        Вкладка <strong>«Транскрипция»</strong> в чате — модели только для распознавания аудио в текст (микрофон и вложение в
+        поле ввода). <strong>«Речь в чате»</strong> — ответ модели может включать аудио по правилам провайдера. Видео и
+        картинки — см. карточку модели.
       </p>
 
       <div class="tariffs-tabs" role="tablist" aria-label="Категории моделей" id="tariffs-tablist"></div>
@@ -53,13 +55,14 @@
         if (m.isFree === true) return "free";
         if (m.supportsVideoGeneration) return "video";
         if (m.supportsImageGeneration) return "image";
-        if (m.supportsTranscription) return "transcription";
+        if (m.supportsSpeech && m.supportsTranscription) return "speech";
         if (m.supportsSpeech && m.supportsMusicGeneration) {
           const s = String(m.slug || "");
           if (s.includes("lyria")) return "music";
           return "speech";
         }
         if (m.supportsSpeech) return "speech";
+        if (m.supportsTranscription) return "transcription";
         if (m.supportsMusicGeneration) return "music";
         return "text";
       }
@@ -69,8 +72,8 @@
         if (c.free) return "Бесплатно";
         if (c.videoGeneration) return "Видео (сек., разреш., звук)";
         if (c.imageGeneration) return "Картинка в чате (токены)";
-        if (c.transcription) return "Транскрипция (отдельный API)";
         if (c.speech) return "Речь / аудио в чате";
+        if (c.transcription) return "Транскрипция (отдельный API)";
         if (c.musicGeneration) return "Музыка";
         return "Текст (токены)";
       }
@@ -205,6 +208,17 @@
             const grid = document.createElement("div");
             grid.className = "tariffs-grid";
 
+            if (g.id === "transcription") {
+              const note = document.createElement("p");
+              note.className = "hint";
+              note.style.margin = "0 0 1rem";
+              note.innerHTML =
+                "Эти модели <strong>не для диалога</strong> — только распознавание в текст. В <a href=\"/\">чате</a> выберите " +
+                "вкладку «Транскрипция» и модель, затем микрофон (удерживайте) или аудио во вложении 📎. " +
+                "Для интеграций: <code>POST /api/v1/transcribe</code>.";
+              panel.appendChild(note);
+            }
+
             for (const m of buckets[g.id]) {
               const art = document.createElement("article");
               art.className = "card tariff-card";
@@ -214,10 +228,9 @@
                 !m.capabilities?.speech &&
                 !m.capabilities?.musicGeneration &&
                 !m.capabilities?.imageGeneration &&
-                !m.capabilities?.videoGeneration &&
-                !m.isFree;
+                !m.capabilities?.videoGeneration;
               const chatFooter = sttOnly
-                ? '<p class="tariff-price-hint">Отдельный API распознавания; голосовой ввод в приложении обрабатывается на сервере.</p>'
+                ? `<p class="tariff-price-hint">Не для диалога. Распознавание в <a href="${chatHref}">чате</a> (вкладка «Транскрипция») или API <code>POST /api/v1/transcribe</code>. Голосовой ответ — модели «Речь в чате».</p>`
                 : `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-slug="${escape(m.slug)}">Выбрать в чате</a>`;
               art.innerHTML = `
                 <div class="tariff-card-head">

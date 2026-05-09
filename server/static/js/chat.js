@@ -1,7 +1,6 @@
 import { consumeStream } from "./sse.js?v=20";
 
 const MODEL_STORAGE_KEY = "ai_proxy_model_slug";
-const STT_STORAGE_KEY = "ai_proxy_stt_slug";
 /** Выставляется на /tariffs при выборе модели — чат не подменяет её моделью из старого диалога. */
 const MODEL_EXPLICIT_CHOICE_KEY = "ai_proxy_explicit_model";
 
@@ -96,33 +95,31 @@ function renderMd(html) {
   return escapeHtml(html).replace(/\n/g, "<br>");
 }
 
-/** Только транскрипция (endpoint /audio/transcriptions) — не в списке моделей чата. */
-function isChatSelectableModel(m) {
-  if (
+/** Модель только STT (нет диалога chat completions) — вкладка «Транскрипция» в пикере. */
+function isSttOnlyModel(m) {
+  if (!m) return false;
+  return (
     m.supportsTranscription === true &&
     m.supportsSpeech !== true &&
     m.supportsMusicGeneration !== true &&
     m.supportsImageGeneration !== true &&
-    m.supportsVideoGeneration !== true &&
-    m.isFree !== true
-  ) {
-    return false;
-  }
-  return true;
+    m.supportsVideoGeneration !== true
+  );
 }
 
-/** Группа модели для сетки: бесплатные > видео > изображения > транскрипция > речь > музыка > текст */
+/** Группа модели для сетки: бесплатные > видео > изображения > речь в чате > транскрипция > музыка > текст */
 function modelGroupId(m) {
   if (m.isFree === true) return "free";
   if (m.supportsVideoGeneration) return "video";
   if (m.supportsImageGeneration) return "image";
-  if (m.supportsTranscription) return "transcription";
+  if (m.supportsSpeech && m.supportsTranscription) return "speech";
   if (m.supportsSpeech && m.supportsMusicGeneration) {
     const s = String(m.slug || "");
     if (s.includes("lyria")) return "music";
     return "speech";
   }
   if (m.supportsSpeech) return "speech";
+  if (m.supportsTranscription) return "transcription";
   if (m.supportsMusicGeneration) return "music";
   return "text";
 }
@@ -169,32 +166,69 @@ function modelBrandIconUrl(slug) {
 
 /**
  * Понятные подсказки к ответам модели в потоке.
- * Для :free чаще бывает «Provider returned error» — общая очередь и лимиты у провайдера.
+ * :free в slug и openrouter/free — правда общая очередь; is_free без :free в slug — только флаг в БД, текст нейтральнее.
  */
 function humanizeOpenRouterStreamError(detail, opts = {}) {
   const isFree = opts.isFree === true;
+  const slug = String(opts.modelSlug || "");
+  const useFreeQueueStory =
+    isFree &&
+    (slug.includes(":free") ||
+      slug === "openrouter/free" ||
+      slug.startsWith("openrouter/free"));
+
   const m = String(detail || "").trim();
-  if (!m) {
-    return isFree
-      ? "Не удалось получить ответ по бесплатному каналу. Повторите позже или выберите платную модель."
-      : "Ошибка при ответе модели.";
-  }
   const low = m.toLowerCase();
-  if (low.includes("provider returned error")) {
+
+  const providerBlob = () => {
+    if (useFreeQueueStory) {
+      return (
+        "Бесплатный канал: общая очередь или временная недоступность этой модели у провайдера. " +
+        "Подождите минуту и повторите, выберите **Бесплатно (автовыбор)** или платную модель."
+      );
+    }
     if (isFree) {
-      return "На бесплатных моделях ответ идёт через общую очередь: провайдер временно недоступен или перегружен. Подождите минуту, повторите запрос или переключитесь на платную модель.";
+      return (
+        "Провайдер не вернул ответ (часто так бывает с **новыми** или **редкими** моделями). " +
+        "Повторите запрос, смените модель или используйте **Бесплатно (автовыбор)**."
+      );
     }
     return "Провайдер модели вернул ошибку (лимит, перегрузка или сбой канала). Попробуйте другую модель или повторите запрос позже.";
+  };
+
+  if (!m) {
+    return useFreeQueueStory
+      ? "Не удалось получить ответ по бесплатному каналу. Повторите позже или выберите платную модель."
+      : isFree
+        ? "Не удалось получить ответ. Повторите запрос или выберите другую модель."
+        : "Ошибка при ответе модели.";
+  }
+
+  if (low.includes("provider returned error")) {
+    return providerBlob();
+  }
+  if (
+    low.includes("finish_reason=error") ||
+    low.includes("ошибка провайдера") ||
+    low.includes("provider") && low.includes("error")
+  ) {
+    return providerBlob();
   }
   if (low.includes("no endpoints found")) {
+    if (useFreeQueueStory) {
+      return "Для этой бесплатной модели сейчас нет свободных серверов. Выберите другую :free модель, **Бесплатно (автовыбор)** или платную.";
+    }
     if (isFree) {
-      return "Для этой бесплатной модели сейчас нет свободных серверов. Выберите другую :free модель или платную.";
+      return "Для этой модели сейчас нет доступных серверов у провайдера. Выберите другую модель в списке.";
     }
     return "Для выбранной модели сейчас нет доступных серверов. Выберите другую модель в списке.";
   }
   if (low.includes("rate limit") || low.includes("too many requests")) {
-    if (isFree) {
+    if (useFreeQueueStory) {
       return "Лимит запросов на бесплатном канале. Подождите или перейдите на платную модель.";
+    }
+    if (isFree) {
+      return "Слишком много запросов для этого маршрута. Подождите или смените модель.";
     }
     return "Слишком много запросов. Подождите немного или смените модель.";
   }
@@ -210,8 +244,8 @@ async function main() {
 
   const cfg = await api("/api/config").then((r) => r.json());
   const models = await api("/api/models").then((r) => r.json());
-  const chatModels = models.filter(isChatSelectableModel);
-  const sttModels = models.filter((m) => m.supportsTranscription === true);
+  const sttModels = models.filter((x) => x.supportsTranscription === true);
+  const chatModels = models;
 
   const balanceEl = document.getElementById("balance");
   const modelPickerEl = document.getElementById("model-picker");
@@ -727,65 +761,24 @@ async function main() {
     }
   }
 
-  function selectedSttSlug() {
-    const sel = document.getElementById("stt-model");
-    if (sel && sel.value) return sel.value;
-    return "openai/whisper-1";
-  }
-
-  function initSttSelect() {
-    const sel = document.getElementById("stt-model");
-    if (!sel || sttModels.length === 0) return;
-    sel.innerHTML = "";
-    const sorted = [...sttModels].sort((a, b) =>
-      String(a.displayName).localeCompare(String(b.displayName), "ru"),
-    );
-    for (const m of sorted) {
-      const o = document.createElement("option");
-      o.value = m.slug;
-      o.textContent = m.displayName;
-      sel.appendChild(o);
-    }
-    let saved = "";
-    try {
-      saved = sessionStorage.getItem(STT_STORAGE_KEY) || "";
-    } catch {
-      saved = "";
-    }
-    if (saved && sttModels.some((x) => x.slug === saved)) {
-      sel.value = saved;
-    } else {
-      const w = sttModels.find((x) => x.slug === "openai/whisper-1");
-      sel.value = w ? w.slug : sttModels[0].slug;
-    }
-    sel.addEventListener("change", () => {
-      try {
-        sessionStorage.setItem(STT_STORAGE_KEY, sel.value);
-      } catch {
-        /* ignore */
-      }
-    });
-  }
-  initSttSelect();
-
   const imgGenHintEl = document.getElementById("img-gen-hint");
+  const sttModeHintEl = document.getElementById("stt-mode-hint");
   function updateHints() {
     const m = selectedModel();
     if (!m) return;
+    const vid = m.supportsVideoGeneration === true;
     if (imgGenHintEl) {
       imgGenHintEl.style.display =
         m.supportsImageGeneration === true && m.supportsVideoGeneration !== true
           ? "block"
           : "none";
     }
+    if (sttModeHintEl) {
+      sttModeHintEl.style.display = !vid && isSttOnlyModel(m) ? "block" : "none";
+    }
     if (videoPanelEl && formEl) {
-      const vid = m.supportsVideoGeneration === true;
       videoPanelEl.style.display = vid ? "block" : "none";
       formEl.style.display = vid ? "none" : "";
-      const voiceTb = document.getElementById("voice-toolbar");
-      if (voiceTb) {
-        voiceTb.style.display = vid ? "none" : "";
-      }
       if (vid) {
         formEl.setAttribute("inert", "");
         const ae = document.activeElement;
@@ -881,10 +874,24 @@ async function main() {
   function userContentPreview(content) {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
+      if (content.some((x) => x?.type === "input_audio")) return "🎤 Голосовое сообщение";
       const t = content.find((x) => x?.type === "text");
       return String(t?.text ?? "").trim() || "[изображение]";
     }
     return "[сообщение]";
+  }
+
+  function sanitizeMessagesForPersist(msgs) {
+    return msgs.map((m) => {
+      if (m.role !== "user" || !Array.isArray(m.content)) return m;
+      const filtered = m.content.filter((p) => p?.type !== "input_audio");
+      if (filtered.length === m.content.length) return m;
+      if (filtered.length > 0) return { ...m, content: filtered };
+      return {
+        ...m,
+        content: [{ type: "text", text: "🎤 Голосовое сообщение" }],
+      };
+    });
   }
 
   function renderAssistantFromSaved(msg) {
@@ -964,7 +971,7 @@ async function main() {
     if (!currentConversationId) return;
     if (history.length === 0) return;
     try {
-      const messages = JSON.parse(JSON.stringify(history));
+      const messages = JSON.parse(JSON.stringify(sanitizeMessagesForPersist(history)));
       const title = deriveTitleFromHistory();
       await api(
         `/api/v1/conversations/${encodeURIComponent(currentConversationId)}`,
@@ -1096,11 +1103,116 @@ async function main() {
   }
 
   let streaming = false;
+  let transcribing = false;
+
+  function setComposerDisabled(flag) {
+    if (inputEl) inputEl.disabled = flag;
+    const bm = document.getElementById("btn-mic");
+    const at = document.getElementById("btn-attach");
+    const sub = formEl?.querySelector('button[type="submit"]');
+    if (bm) bm.disabled = flag;
+    if (at) at.disabled = flag;
+    if (sub) sub.disabled = flag;
+  }
+
+  function resolveTranscribeSlug() {
+    const m = selectedModel();
+    if (m?.supportsTranscription === true) return m.slug;
+    const w = sttModels.find((x) => x.slug === "openai/whisper-1");
+    if (w) return w.slug;
+    if (sttModels.length) return sttModels[0].slug;
+    return "openai/whisper-1";
+  }
+
+  async function runTranscribeToInput(blob, filename) {
+    const mod = selectedModel();
+    if (!mod || mod.supportsVideoGeneration === true) return;
+    if (transcribing || streaming) return;
+    if (!sttModels.length) {
+      errEl.textContent = "Нет моделей распознавания в каталоге.";
+      errEl.style.display = "block";
+      return;
+    }
+    transcribing = true;
+    setComposerDisabled(true);
+    errEl.textContent = "";
+    errEl.style.display = "none";
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, filename || "audio.bin");
+      fd.append("sttModel", resolveTranscribeSlug());
+      const res = await api("/api/v1/transcribe", { method: "POST", body: fd });
+      if (res.status === 401) {
+        errEl.textContent =
+          "Войдите в аккаунт — для выбранной модели распознавания нужны вход и баланс.";
+        errEl.style.display = "block";
+        return;
+      }
+      if (res.status === 402) {
+        let msg = "Недостаточно средств на балансе.";
+        try {
+          const j = await res.json();
+          const d = j.detail;
+          if (d && typeof d === "object" && d.estimatedMinRub != null) {
+            msg = `На балансе не хватает (ориентир ~${Number(
+              d.estimatedMinRub,
+            ).toLocaleString("ru-RU", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 4,
+            })} ₽). Пополните баланс.`;
+          }
+        } catch {
+          /* use default */
+        }
+        errEl.textContent = msg;
+        errEl.style.display = "block";
+        return;
+      }
+      if (!res.ok) {
+        try {
+          const j = await res.json();
+          const d = j.detail;
+          errEl.textContent =
+            typeof d === "string" ? d : "Не удалось распознать аудио.";
+        } catch {
+          errEl.textContent = "Ошибка распознавания.";
+        }
+        errEl.style.display = "block";
+        return;
+      }
+      const data = await res.json();
+      const text = typeof data.text === "string" ? data.text.trim() : "";
+      if (text) {
+        const cur = inputEl.value;
+        inputEl.value = cur ? `${cur.replace(/\s+$/, "")} ${text}`.trim() : text;
+        try {
+          inputEl.focus();
+        } catch {
+          /* ignore */
+        }
+      }
+      const me2 = await api("/api/auth/me").then((r) => r.json());
+      if (!me2.guest && me2.balance != null) refreshBalance(me2.balance);
+    } catch (e) {
+      console.error("[chat] transcribe", e);
+      errEl.textContent = "Сеть или сервер недоступны.";
+      errEl.style.display = "block";
+    } finally {
+      transcribing = false;
+      setComposerDisabled(false);
+    }
+  }
 
   async function runChat() {
     const m0 = selectedModel();
     if (!m0 || m0.supportsVideoGeneration === true) {
       console.warn("[chat] runChat отменён: для видеомодели чат отключён");
+      return;
+    }
+    if (isSttOnlyModel(m0)) {
+      errEl.textContent =
+        "Выбрана модель только для распознавания речи. Переключитесь на модель с диалогом (вкладка «Текст и чат» и др.), чтобы отправить сообщение.";
+      errEl.style.display = "block";
       return;
     }
     try {
@@ -1194,7 +1306,7 @@ async function main() {
           const mod = selectedModel();
           const msg = humanizeOpenRouterStreamError(
             typeof detail === "string" ? detail : "",
-            { isFree: mod?.isFree === true },
+            { isFree: mod?.isFree === true, modelSlug: mod?.slug },
           );
           errEl.textContent = msg;
           errEl.style.display = "block";
@@ -1239,165 +1351,6 @@ async function main() {
       await persistThread();
     } catch (e) {
       console.error("[chat] runChat", e);
-      errEl.textContent = "Ошибка";
-      errEl.style.display = "block";
-      await persistThread();
-    } finally {
-      streaming = false;
-      setSidebarBusy(false);
-    }
-  }
-
-  async function runVoiceMultipart(blob, filename, mime) {
-    const m0 = selectedModel();
-    if (!m0 || m0.supportsVideoGeneration === true) return;
-    if (m0.isFree !== true && isGuest) {
-      errEl.textContent =
-        "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
-      errEl.style.display = "block";
-      return;
-    }
-    try {
-      errEl.textContent = "";
-      errEl.style.display = "none";
-      streaming = true;
-      setSidebarBusy(true);
-      const { md, cost, typing, audioOut } = appendAssistantShell();
-      let acc = "";
-      let userTranscriptShown = false;
-      const imageUrls = [];
-      const audioParts = [];
-      function renderAssistantHtml() {
-        let html = renderMd(acc);
-        for (const u of imageUrls) {
-          html += `<p class="gen-img-wrap"><img src="${u}" alt="Сгенерированное изображение" class="gen-image" loading="lazy" decoding="async" /></p>`;
-        }
-        return html;
-      }
-
-      const fd = new FormData();
-      fd.append("audio", blob, filename);
-      fd.append("modelSlug", m0.slug);
-      fd.append("sttModel", selectedSttSlug());
-      fd.append("messages", JSON.stringify(messagesForRequest()));
-      fd.append("stream", "true");
-
-      const res = await api("/api/v1/messages", { method: "POST", body: fd });
-
-      if (res.status === 401) {
-        let msg = "Войдите в аккаунт, чтобы пользоваться платными моделями.";
-        try {
-          const j = await res.json();
-          if (j.detail && j.detail !== "LOGIN_REQUIRED") msg = "Требуется вход.";
-        } catch {
-          /* use default */
-        }
-        errEl.textContent = msg;
-        errEl.style.display = "block";
-        typing.remove();
-        await persistThread();
-        return;
-      }
-      if (res.status === 402) {
-        let msg = "Недостаточно средств на балансе для этого запроса.";
-        try {
-          const j = await res.json();
-          const d = j.detail;
-          if (d && typeof d === "object" && d.estimatedMinRub != null) {
-            msg = `На балансе не хватает на расчётный минимум (~${Number(
-              d.estimatedMinRub,
-            ).toLocaleString("ru-RU", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 4,
-            })} ₽). Пополните баланс.`;
-          }
-        } catch {
-          /* use default */
-        }
-        errEl.textContent = msg;
-        errEl.style.display = "block";
-        typing.remove();
-        await persistThread();
-        return;
-      }
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        console.error("[chat /messages voice]", res.status, j);
-        errEl.textContent = "Ошибка распознавания или ответа.";
-        errEl.style.display = "block";
-        typing.remove();
-        await persistThread();
-        return;
-      }
-
-      await consumeStream(
-        res.body.getReader(),
-        (delta) => {
-          acc += delta;
-          typing.remove();
-          md.innerHTML = renderAssistantHtml();
-          listEl.scrollTop = listEl.scrollHeight;
-        },
-        (rub) => {
-          cost.textContent = `Стоимость запроса: ${Number(rub).toLocaleString("ru-RU", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 4,
-          })} ₽`;
-        },
-        (detail) => {
-          const mod = selectedModel();
-          const msg = humanizeOpenRouterStreamError(
-            typeof detail === "string" ? detail : "",
-            { isFree: mod?.isFree === true },
-          );
-          errEl.textContent = msg;
-          errEl.style.display = "block";
-          typing.remove();
-        },
-        (images) => {
-          for (const item of images || []) {
-            const u = item?.image_url?.url;
-            if (typeof u === "string" && u && !imageUrls.includes(u)) imageUrls.push(u);
-          }
-          typing.remove();
-          md.innerHTML = renderAssistantHtml();
-          listEl.scrollTop = listEl.scrollHeight;
-        },
-        (transcriptText) => {
-          if (userTranscriptShown) return;
-          appendUserBubble(transcriptText);
-          history.push({ role: "user", content: transcriptText });
-          userTranscriptShown = true;
-        },
-        (aud) => {
-          if (aud?.data) audioParts.push(aud.data);
-        },
-      );
-
-      if (audioOut && audioParts.length > 0) {
-        try {
-          const b64 = audioParts.join("");
-          const bin = atob(b64);
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const blobA = new Blob([bytes], { type: "audio/wav" });
-          audioOut.src = URL.createObjectURL(blobA);
-          audioOut.style.display = "block";
-        } catch (e) {
-          console.warn("[chat] assistant audio decode (voice)", e);
-        }
-      }
-
-      const asst = { role: "assistant", content: acc };
-      if (imageUrls.length) asst.imageUrls = imageUrls;
-      history.push(asst);
-      typing.remove();
-
-      const me2 = await api("/api/auth/me").then((r) => r.json());
-      if (!me2.guest && me2.balance != null) refreshBalance(me2.balance);
-      await persistThread();
-    } catch (e) {
-      console.error("[chat] runVoiceMultipart", e);
       errEl.textContent = "Ошибка";
       errEl.style.display = "block";
       await persistThread();
@@ -1598,84 +1551,87 @@ async function main() {
   }
 
   const btnMic = document.getElementById("btn-mic");
-  const btnAudioFile = document.getElementById("btn-audio-file");
-  const audioFileInput = document.getElementById("audio-file-input");
   let mediaRecorder = null;
+  let recStream = null;
   let recChunks = [];
+  let micUpListener = null;
+
+  function removeMicUpListener() {
+    if (micUpListener) {
+      window.removeEventListener("pointerup", micUpListener, true);
+      micUpListener = null;
+    }
+  }
 
   if (btnMic) {
-    btnMic.addEventListener("click", async () => {
-      if (streaming) return;
+    btnMic.addEventListener("pointerdown", async (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      if (streaming || transcribing) return;
       const mod = selectedModel();
       if (!mod || mod.supportsVideoGeneration === true) return;
-      if (mod.isFree !== true && isGuest) {
-        errEl.textContent =
-          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
-        errEl.style.display = "block";
-        return;
-      }
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-        return;
-      }
+      if (mediaRecorder && mediaRecorder.state === "recording") return;
+      errEl.textContent = "";
+      errEl.style.display = "none";
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recChunks = [];
         const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
           ? "audio/webm;codecs=opus"
           : "audio/webm";
-        mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+        mediaRecorder = new MediaRecorder(recStream, { mimeType: mime });
         mediaRecorder.ondataavailable = (ev) => {
           if (ev.data.size > 0) recChunks.push(ev.data);
         };
         mediaRecorder.onstop = async () => {
-          stream.getTracks().forEach((t) => t.stop());
+          removeMicUpListener();
+          const mimeType = mediaRecorder?.mimeType || "audio/webm";
+          recStream?.getTracks().forEach((t) => t.stop());
+          recStream = null;
           btnMic.classList.remove("btn-mic--recording");
           btnMic.setAttribute("aria-pressed", "false");
-          const blob = new Blob(recChunks, {
-            type: mediaRecorder.mimeType || "audio/webm",
-          });
+          const blob = new Blob(recChunks, { type: mimeType });
+          recChunks = [];
+          mediaRecorder = null;
           if (blob.size < 32) return;
-          await ensureConversation();
-          await runVoiceMultipart(blob, "voice.webm", blob.type || "audio/webm");
+          await runTranscribeToInput(blob, "voice.webm");
         };
         mediaRecorder.start();
         btnMic.classList.add("btn-mic--recording");
         btnMic.setAttribute("aria-pressed", "true");
+        try {
+          btnMic.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+        micUpListener = () => {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          }
+        };
+        window.addEventListener("pointerup", micUpListener, true);
       } catch {
+        removeMicUpListener();
         errEl.textContent = "Не удалось получить доступ к микрофону.";
         errEl.style.display = "block";
+        recStream?.getTracks().forEach((t) => t.stop());
+        recStream = null;
+        mediaRecorder = null;
       }
-    });
-  }
-
-  if (btnAudioFile && audioFileInput) {
-    btnAudioFile.addEventListener("click", () => {
-      if (streaming) return;
-      audioFileInput.click();
-    });
-    audioFileInput.addEventListener("change", async () => {
-      const f = audioFileInput.files?.[0];
-      audioFileInput.value = "";
-      if (!f || streaming) return;
-      const mod = selectedModel();
-      if (!mod || mod.supportsVideoGeneration === true) return;
-      if (mod.isFree !== true && isGuest) {
-        errEl.textContent =
-          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
-        errEl.style.display = "block";
-        return;
-      }
-      await ensureConversation();
-      await runVoiceMultipart(f, f.name, f.type || "application/octet-stream");
     });
   }
 
   formEl.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (streaming) return;
+    if (streaming || transcribing) return;
     const mod = selectedModel();
     if (!mod || mod.supportsVideoGeneration === true) return;
+    if (isSttOnlyModel(mod)) {
+      errEl.textContent =
+        "Выбрана модель только для распознавания речи. Переключитесь на модель с диалогом, чтобы отправить сообщение.";
+      errEl.style.display = "block";
+      return;
+    }
     const text = inputEl.value.trim();
     if (!text) return;
     if (mod.isFree !== true && isGuest) {
@@ -1695,12 +1651,27 @@ async function main() {
   fileEl.addEventListener("change", async () => {
     const f = fileEl.files?.[0];
     fileEl.value = "";
-    if (!f || !f.type.startsWith("image/")) return;
+    if (!f) return;
     const mod = selectedModel();
     if (!mod || mod.supportsVideoGeneration === true) return;
+    if (f.type.startsWith("audio/")) {
+      if (streaming || transcribing) return;
+      if (mod.isFree !== true && isGuest) {
+        errEl.textContent =
+          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
+        errEl.style.display = "block";
+        return;
+      }
+      await runTranscribeToInput(f, f.name);
+      return;
+    }
+    if (!f.type.startsWith("image/")) {
+      errEl.textContent = "Вложение: изображение или аудиофайл.";
+      errEl.style.display = "block";
+      return;
+    }
     if (!mod.supportsVision) {
-      console.error("[chat] model without vision", mod.slug);
-      errEl.textContent = "Ошибка";
+      errEl.textContent = "Эта модель не анализирует изображения. Выберите модель с поддержкой vision.";
       errEl.style.display = "block";
       return;
     }

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -69,6 +69,11 @@ def create_app() -> FastAPI:
     @app.get("/tariffs")
     def tariffs_page():
         return FileResponse(STATIC_DIR / "tariffs.html")
+
+    @app.get("/transcribe")
+    def transcribe_redirect():
+        """Раньше была отдельная страница; распознавание — в чате (вкладка «Транскрипция» в моделях)."""
+        return RedirectResponse(url="/", status_code=302)
 
     @app.get("/admin")
     def admin_page():

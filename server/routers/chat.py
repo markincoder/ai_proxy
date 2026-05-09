@@ -1,3 +1,4 @@
+import base64
 import json
 from decimal import Decimal
 from typing import Any, AsyncIterator
@@ -13,9 +14,9 @@ from ..database import SessionLocal
 from ..deps import resolve_user_id
 from ..models import AiModel
 from ..openrouter import (
-    OPENROUTER_URL,
     chat_completions,
     openrouter_async_client,
+    openrouter_base_url,
     openrouter_headers,
     transcribe_audio,
 )
@@ -28,6 +29,56 @@ _MAX_AUDIO_BYTES = 25 * 1024 * 1024
 _DEFAULT_STT_SLUG = "openai/whisper-1"
 
 
+def _messages_contain_input_audio(msg_dicts: list[dict[str, Any]]) -> bool:
+    for m in msg_dicts:
+        c = m.get("content")
+        if isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict) and part.get("type") == "input_audio":
+                    return True
+    return False
+
+
+def _messages_for_estimate(msg_dicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """input_audio не должен раздувать оценку баланса (огромный base64)."""
+    out: list[dict[str, Any]] = []
+    for m in msg_dicts:
+        c = m.get("content")
+        if not isinstance(c, list):
+            out.append(m)
+            continue
+        new_parts: list[Any] = []
+        for part in c:
+            if isinstance(part, dict) and part.get("type") == "input_audio":
+                new_parts.append(
+                    {"type": "text", "text": "…" * _VOICE_PLACEHOLDER_CHARS}
+                )
+            else:
+                new_parts.append(part)
+        m2 = dict(m)
+        m2["content"] = new_parts
+        out.append(m2)
+    return out
+
+
+def _audio_format_from_mime(mime: str, filename: str) -> str:
+    m = (mime or "").lower()
+    fn = (filename or "").lower()
+    if "webm" in m or fn.endswith(".webm"):
+        return "webm"
+    if "wav" in m or fn.endswith(".wav"):
+        return "wav"
+    if "mpeg" in m or "mp3" in m or fn.endswith(".mp3"):
+        return "mp3"
+    if "ogg" in m or fn.endswith(".ogg"):
+        return "ogg"
+    if "flac" in m or fn.endswith(".flac"):
+        return "flac"
+    if "mp4" in m or "m4a" in m or fn.endswith((".m4a", ".mp4")):
+        return "mp4"
+    return "wav"
+
+
 def _estimate_transcribe_floor_rub(stt: AiModel) -> Decimal:
     """STT в БД — ориентир ₽/мин аудио; доля минуты как нижняя оценка одного запроса."""
     if stt.is_free:
@@ -36,37 +87,6 @@ def _estimate_transcribe_floor_rub(stt: AiModel) -> Decimal:
     if pm <= 0:
         return Decimal("0.01")
     return max(pm / Decimal("6"), Decimal("0.01"))
-
-
-def _resolve_user_for_voice_session(
-    request: Request,
-    db: Session,
-    chat_model: AiModel,
-    stt_model: AiModel | None,
-    messages_for_estimate: list[dict[str, Any]],
-) -> str | None:
-    """Сессия и баланс на ответ чата и при голосе — на транскрипцию."""
-    est_chat = (
-        Decimal("0")
-        if chat_model.is_free
-        else estimate_min_spend_rub(chat_model, messages_for_estimate)
-    )
-    est_stt = (
-        _estimate_transcribe_floor_rub(stt_model)
-        if stt_model is not None and not stt_model.is_free
-        else Decimal("0")
-    )
-    total = est_chat + est_stt
-    if total <= 0 and chat_model.is_free:
-        return resolve_user_id(request, db)
-    uid = resolve_user_id(request, db)
-    if not uid:
-        raise HTTPException(
-            status_code=401,
-            detail="LOGIN_REQUIRED",
-        )
-    assert_balance_covers_estimate(db, uid, total)
-    return uid
 
 
 async def _transcribe_and_bill(
@@ -226,7 +246,13 @@ async def post_messages(request: Request):
         )
         if not model:
             raise HTTPException(status_code=404, detail="Unknown or inactive model")
-        user_id = _resolve_user_for_model(request, db, model, msg_dicts)
+        if _messages_contain_input_audio(msg_dicts) and not model.supports_speech:
+            raise HTTPException(
+                status_code=400,
+                detail="Аудио на входе доступно только для моделей с поддержкой речи в чате.",
+            )
+        msgs_est = _messages_for_estimate(msg_dicts)
+        user_id = _resolve_user_for_model(request, db, model, msgs_est)
     return await _handle_chat_json(body, user_id, model)
 
 
@@ -234,7 +260,7 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
     form = await request.form()
     audio = form.get("audio")
     model_slug = str(form.get("modelSlug") or "")
-    stt_slug = str(form.get("sttModel") or _DEFAULT_STT_SLUG).strip() or _DEFAULT_STT_SLUG
+    voice_hint = str(form.get("voiceHint") or "").strip() or "Ответь на голосовое сообщение."
     messages_raw = str(form.get("messages") or "[]")
     stream = str(form.get("stream") or "true").lower() != "false"
 
@@ -254,6 +280,7 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
     mime = getattr(audio, "content_type", None) or "audio/webm"
     raw_name = getattr(audio, "filename", None) or "voice.webm"
     safe_name = str(raw_name).replace("\\", "/").split("/")[-1][:220] or "voice.webm"
+    fmt = _audio_format_from_mime(mime, safe_name)
 
     with SessionLocal() as db:
         model = (
@@ -263,38 +290,28 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
         )
         if not model:
             raise HTTPException(status_code=404, detail="Unknown or inactive model")
-        stt = (
-            db.query(AiModel)
-            .filter(AiModel.slug == stt_slug, AiModel.is_active.is_(True))
-            .first()
-        )
-        if not stt or not stt.supports_transcription:
-            raise HTTPException(status_code=404, detail="Unknown or inactive STT model")
-        msgs_for_est = list(msgs) + [{"role": "user", "content": "…" * _VOICE_PLACEHOLDER_CHARS}]
-        user_id = _resolve_user_for_voice_session(request, db, model, stt, msgs_for_est)
+        if not model.supports_speech:
+            raise HTTPException(
+                status_code=400,
+                detail="Загрузка аудио в чате доступна только для моделей с поддержкой речи в чате.",
+            )
+        user_content = [
+            {"type": "text", "text": voice_hint},
+            {
+                "type": "input_audio",
+                "input_audio": {"data": base64.b64encode(content).decode("ascii"), "format": fmt},
+            },
+        ]
+        msgs.append({"role": "user", "content": user_content})
+        msgs_est = _messages_for_estimate(msgs)
+        user_id = _resolve_user_for_model(request, db, model, msgs_est)
 
-    text = await _transcribe_and_bill(user_id, stt, content, safe_name, mime)
-    msgs.append({"role": "user", "content": text})
     body = ChatJsonBody(
         model_slug=model_slug,
         messages=[Msg.model_validate(m) for m in msgs],
         stream=stream,
     )
-    inner = await _handle_chat_json(body, user_id, model)
-    if isinstance(inner, JSONResponse):
-        return inner
-
-    async def prepend_transcript() -> AsyncIterator[bytes]:
-        meta = json.dumps({"text": text}, ensure_ascii=False)
-        yield f"event: user_transcript\ndata: {meta}\n\n".encode()
-        async for chunk in inner.body_iterator:
-            yield chunk
-
-    return StreamingResponse(
-        prepend_transcript(),
-        media_type=inner.media_type,
-        headers=dict(inner.headers),
-    )
+    return await _handle_chat_json(body, user_id, model)
 
 
 async def _handle_chat_json(
@@ -302,6 +319,12 @@ async def _handle_chat_json(
     user_id: str | None,
     model: AiModel,
 ) -> StreamingResponse | JSONResponse:
+    raw_msgs = [m.model_dump() for m in body.messages]
+    if _messages_contain_input_audio(raw_msgs) and not model.supports_speech:
+        raise HTTPException(
+            status_code=400,
+            detail="Аудио на входе доступно только для моделей с поддержкой речи в чате.",
+        )
     payload: dict[str, Any] = {
         "model": body.model_slug,
         "messages": [m.model_dump() for m in body.messages],
@@ -351,7 +374,7 @@ async def _handle_chat_json(
             async with openrouter_async_client() as client:
                 async with client.stream(
                     "POST",
-                    f"{OPENROUTER_URL}/chat/completions",
+                    f"{openrouter_base_url()}/chat/completions",
                     headers=openrouter_headers(True),
                     json=payload,
                 ) as resp:
