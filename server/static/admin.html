@@ -66,11 +66,24 @@
         border: none;
         border-radius: 0.75rem;
         padding: 0;
+        box-sizing: border-box;
+        width: min(36rem, calc(100vw - 1.5rem));
         max-width: 36rem;
-        width: calc(100% - 2rem);
+        max-height: min(90dvh, 90vh);
+        overflow-x: hidden;
+        overflow-y: auto;
+        margin: auto;
         background: var(--surface);
         color: var(--text);
         box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.35);
+      }
+      .admin-modal#thread-detail-dialog {
+        width: min(48rem, calc(100vw - 1.5rem));
+        max-width: 48rem;
+      }
+      .admin-modal#error-log-dialog {
+        width: min(52rem, calc(100vw - 1.5rem));
+        max-width: 52rem;
       }
       .admin-modal::backdrop {
         background: rgba(0, 0, 0, 0.45);
@@ -120,6 +133,12 @@
         gap: 0.35rem;
         cursor: pointer;
         color: var(--text);
+      }
+      .admin-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
       }
       .admin-user-actions {
         display: flex;
@@ -202,29 +221,8 @@
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
-    <header class="top-nav" role="navigation" aria-label="Главное меню">
-      <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">II</span>
-        <span>II Proxy</span>
-      </a>
-      <nav class="nav-links">
-        <a href="/news" class="nav-link">Новости</a>
-        <a href="/" class="nav-link">Чат</a>
-        <a href="/tariffs" class="nav-link">Тарифы</a>
-        <a href="/contact" class="nav-link">Связаться с нами</a>
-        <a href="/settings" class="nav-link">Настройки</a>
-        <a href="/admin" class="nav-link active" id="nav-admin" style="display: none">Админка</a>
-      </nav>
-      <div class="nav-actions">
-        <span class="balance-pill" id="balance-wrap"
-          >Баланс <strong id="balance">—</strong></span
-        >
-        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
-        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
-        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
-      </div>
-    </header>
+    <div id="site-header-root"></div>
+    <script src="/static/js/site-header.js?v=3" defer></script>
 
     <main class="main-shell admin-shell">
       <div id="admin-content" style="display: none">
@@ -565,7 +563,7 @@
       </div>
     </dialog>
 
-    <dialog class="admin-modal" id="thread-detail-dialog" aria-labelledby="thread-detail-title" style="max-width: 48rem">
+    <dialog class="admin-modal" id="thread-detail-dialog" aria-labelledby="thread-detail-title">
       <div class="admin-modal-inner">
         <h2 id="thread-detail-title">Содержимое чата</h2>
         <p id="thread-detail-meta" style="font-size: 0.78rem; color: var(--muted); margin: 0 0 0.5rem"></p>
@@ -576,7 +574,7 @@
       </div>
     </dialog>
 
-    <dialog class="admin-modal" id="error-log-dialog" aria-labelledby="error-log-dialog-title" style="max-width: 52rem">
+    <dialog class="admin-modal" id="error-log-dialog" aria-labelledby="error-log-dialog-title">
       <div class="admin-modal-inner">
         <h2 id="error-log-dialog-title">Ошибка сервера</h2>
         <p id="error-log-dialog-meta" style="font-size: 0.78rem; color: var(--muted); margin: 0 0 0.5rem"></p>
@@ -895,6 +893,8 @@
         document.getElementById("threads-dialog").close();
       document.getElementById("thread-detail-close").onclick = () =>
         document.getElementById("thread-detail-dialog").close();
+      document.getElementById("mf-cancel").onclick = () =>
+        document.getElementById("model-dialog").close();
 
       function openEdit(m) {
         document.getElementById("mf-id").value = m.id;
@@ -1363,5 +1363,6 @@
         await loadBanner();
       })();
     </script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
   </body>
 </html>

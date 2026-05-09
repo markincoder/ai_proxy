@@ -9,29 +9,8 @@
   <body class="page-account">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
-    <header class="top-nav" role="navigation" aria-label="Главное меню">
-      <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">II</span>
-        <span>II Proxy</span>
-      </a>
-      <nav class="nav-links">
-        <a href="/news" class="nav-link">Новости</a>
-        <a href="/" class="nav-link">Чат</a>
-        <a href="/tariffs" class="nav-link">Тарифы</a>
-        <a href="/contact" class="nav-link">Связаться с нами</a>
-        <a href="/settings" class="nav-link active">Настройки</a>
-        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
-      </nav>
-      <div class="nav-actions">
-        <span class="balance-pill" id="balance-wrap"
-          >Баланс <strong id="balance">—</strong></span
-        >
-        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
-        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
-        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
-      </div>
-    </header>
+    <div id="site-header-root"></div>
+    <script src="/static/js/site-header.js?v=3" defer></script>
 
     <main class="main-shell layout-wide page-account-main">
       <h1 class="page-title">Настройки</h1>
@@ -622,5 +601,6 @@
       boot();
 
     </script>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
   </body>
 </html>

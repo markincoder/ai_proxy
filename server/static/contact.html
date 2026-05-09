@@ -3,44 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Связаться с нами — II Proxy</title>
+    <title>Контакты — II Proxy</title>
     <link rel="stylesheet" href="/static/css/style.css?v=48" />
   </head>
   <body class="page-contact">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
-    <header class="top-nav" role="navigation" aria-label="Главное меню">
-      <a href="/" class="brand">
-        <span class="brand-mark" aria-hidden="true">II</span>
-        <span>II Proxy</span>
-      </a>
-      <nav class="nav-links">
-        <a href="/news" class="nav-link">Новости</a>
-        <a href="/" class="nav-link">Чат</a>
-        <a href="/tariffs" class="nav-link">Тарифы</a>
-        <a href="/contact" class="nav-link active">Связаться с нами</a>
-        <a href="/settings" class="nav-link" id="nav-account-contact">Настройки</a>
-        <a href="/admin" class="nav-link" id="nav-admin" style="display: none">Админка</a>
-      </nav>
-      <div class="nav-actions">
-        <span class="balance-pill" id="balance-wrap"
-          >Баланс <strong id="balance">—</strong></span
-        >
-        <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
-        <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
-        <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>
-      </div>
-    </header>
+    <div id="site-header-root"></div>
+    <script src="/static/js/site-header.js?v=2" defer></script>
 
     <main class="main-shell layout-wide page-contact-main">
       <article class="contact-page" lang="ru">
         <p class="legal-doc__meta">
           <a href="/">Главная</a>
           ·
-          <span>Связаться с нами</span>
+          <span>Контакты</span>
         </p>
-        <h1 class="page-title">Связаться с нами</h1>
+        <h1 class="page-title">Контакты</h1>
         <p class="contact-page__lead">
           Написать — будем рады вашему обращению.
         </p>
@@ -62,5 +41,6 @@
     </main>
 
     <footer class="site-footer">II Proxy</footer>
+    <script src="/static/js/app-nav.js?v=2" defer></script>
   </body>
 </html>

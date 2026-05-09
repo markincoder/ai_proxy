@@ -11,7 +11,7 @@ from .config import get_settings
 from .database import init_db
 from .error_logging import install_exception_logging
 from .routers import admin as admin_router
-from .routers import auth, chat, conversations, meta, models_list, newsfeed, oauth, payments, video_jobs
+from .routers import auth, chat, conversations, developer, meta, models_list, newsfeed, oauth, payments, video_jobs
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -23,7 +23,13 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="II Proxy", lifespan=lifespan)
+    # /docs отдаём как страницу документации для разработчиков; Swagger — на /swagger
+    app = FastAPI(
+        title="II Proxy",
+        lifespan=lifespan,
+        docs_url="/swagger",
+        redoc_url="/redoc",
+    )
     s = get_settings()
     app.add_middleware(
         SessionMiddleware,
@@ -41,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(meta.router)
     app.include_router(payments.router)
     app.include_router(video_jobs.router)
+    app.include_router(developer.router)
     app.include_router(newsfeed.router)
     app.include_router(admin_router.router)
 
@@ -87,6 +94,10 @@ def create_app() -> FastAPI:
     @app.get("/news")
     def news_page():
         return FileResponse(STATIC_DIR / "news.html")
+
+    @app.get("/docs")
+    def developer_docs_page():
+        return FileResponse(STATIC_DIR / "docs.html")
 
     @app.get("/terms")
     def terms_page():
