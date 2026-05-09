@@ -149,12 +149,14 @@ def yandex_oauth_start(request: Request):
         raise HTTPException(status_code=404, detail="Yandex OAuth not configured")
     state = secrets.token_urlsafe(32)
     request.session["oauth_yandex_state"] = state
+    # force_confirm=yes: всегда показать экран Яндекса с выбором аккаунта (не «тихий» вход в последний логин).
     qs = urlencode(
         {
             "response_type": "code",
             "client_id": s.yandex_oauth_client_id.strip(),
             "redirect_uri": _yandex_callback_url(),
             "state": state,
+            "force_confirm": "yes",
         }
     )
     return RedirectResponse(url=f"https://oauth.yandex.ru/authorize?{qs}", status_code=302)

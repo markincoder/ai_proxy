@@ -62,13 +62,6 @@ def create_app() -> FastAPI:
             "oauthYandex": s.yandex_oauth_configured,
             "oauthVk": s.vk_oauth_configured,
         }
-        if s.vk_oauth_configured:
-            boot["publicAppUrl"] = s.public_app_url.rstrip("/")
-            boot["vkOneTapAppName"] = s.vk_id_widget_app_name.strip() or s.openrouter_app_title
-            try:
-                boot["vkAppId"] = int(s.vk_oauth_client_id.strip())
-            except ValueError:
-                boot["vkAppId"] = None
         snippet = f"<script>window.__LOGIN_BOOT__={json.dumps(boot)};</script>"
         html = raw.replace("</head>", snippet + "</head>", 1)
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})

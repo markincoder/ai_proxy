@@ -7,6 +7,9 @@ from ..models import ChatThread
 
 router = APIRouter(prefix="/api/v1", tags=["conversations"])
 
+# Сколько последних диалогов с сообщениями хранить на пользователя (остальные удаляются).
+MAX_CHAT_THREADS_PER_USER = 25
+
 
 class CreateConversationBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -31,6 +34,22 @@ def _thread_has_messages(t: ChatThread) -> bool:
     return isinstance(m, list) and len(m) > 0
 
 
+def _prune_excess_threads(db: Session, user_id: str) -> None:
+    """Оставляем не более MAX_CHAT_THREADS_PER_USER диалогов с сообщениями (новее по updated_at)."""
+    rows = (
+        db.query(ChatThread)
+        .filter(ChatThread.user_id == user_id)
+        .order_by(ChatThread.updated_at.desc())
+        .all()
+    )
+    with_msgs = [t for t in rows if _thread_has_messages(t)]
+    if len(with_msgs) <= MAX_CHAT_THREADS_PER_USER:
+        return
+    for t in with_msgs[MAX_CHAT_THREADS_PER_USER:]:
+        db.delete(t)
+    db.commit()
+
+
 def _row_full(t: ChatThread) -> dict:
     return {
         "id": t.id,
@@ -45,6 +64,7 @@ def list_conversations(request: Request, db: Session = Depends(get_db)):
     user_id = resolve_user_id(request, db)
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    _prune_excess_threads(db, user_id)
     rows = (
         db.query(ChatThread)
         .filter(ChatThread.user_id == user_id)
@@ -110,6 +130,7 @@ def patch_conversation(
     if body.messages is not None:
         t.messages = body.messages
     db.commit()
+    _prune_excess_threads(db, user_id)
     return {"ok": True}
 
 

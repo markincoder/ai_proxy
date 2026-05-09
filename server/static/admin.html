@@ -145,13 +145,10 @@
     </header>
 
     <main class="main-shell admin-shell">
-      <h1 class="page-title">Администрирование</h1>
-      <p id="admin-gate" class="page-lead" style="display: none">
-        Нужны права администратора в базе: в таблице <code>users</code> выставьте <code>is_admin = 1</code> (допустимы только <code>0</code> и <code>1</code>). Сначала войдите через
-        <a href="/login">/login</a> (Яндекс или VK), затем выставьте флаг в БД для своего пользователя.
-      </p>
+      <div id="admin-content" style="display: none">
+        <h1 class="page-title">Администрирование</h1>
 
-      <div id="admin-app" style="display: none">
+        <div id="admin-app">
         <p class="page-lead">
           Редактирование карточек моделей в базе (описания, цены, флаги). Пользователи — просмотр балансов.
         </p>
@@ -195,6 +192,7 @@
             </table>
           </div>
         </section>
+        </div>
       </div>
     </main>
 
@@ -267,10 +265,11 @@
         const r = await api("/api/auth/me");
         const me = await r.json().catch(() => ({}));
         if (!r.ok || me.guest || !me.isAdmin) {
-          document.getElementById("admin-gate").style.display = "block";
+          const next = encodeURIComponent(location.pathname + location.search);
+          location.replace("/login?next=" + next);
           return false;
         }
-        document.getElementById("admin-app").style.display = "block";
+        document.getElementById("admin-content").style.display = "block";
         return true;
       }
 

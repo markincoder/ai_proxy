@@ -55,7 +55,6 @@
 | `YANDEX_OAUTH_CLIENT_SECRET` | Секрет приложения Яндекса. |
 | `VK_OAUTH_CLIENT_ID` | ID приложения VK (раздел мини-приложений / Standalone на [dev.vk.com](https://dev.vk.com/)). |
 | `VK_OAUTH_CLIENT_SECRET` или `VK_OAUTH_SECRET_KEY` | Защищённый ключ приложения VK. |
-| `VK_ID_WIDGET_APP_NAME` | Название в виджете VK Floating One Tap; если пусто — `OPENROUTER_APP_TITLE`. |
 | `OAUTH_NEW_USER_BALANCE` | Начальный баланс (₽) при **первом** входе через Яндекс или VK (по умолчанию `0`). |
 | `OPENROUTER_USD_RUB` | Для скрипта `scripts/sync_openrouter_prices.py`: курс условных USD к ₽ при пересчёте цен из API (по умолчанию `100`, если не задано в окружении). |
 | `PRICING_MARKUP_MULT` | Множитель наценки после пересчёта курса (по умолчанию `3`). |
@@ -101,11 +100,11 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 2. В кабинете Яндекса и VK зарегистрируйте redirect URI **точно** так:
    - `https://<ваш-домен>/api/auth/oauth/yandex/callback`
    - `https://<ваш-домен>/api/auth/oauth/vk/callback`
+   https://id.vk.ru/about/business/go/accounts/356823/apps
+   https://oauth.yandex.ru/client/c4f0da23a3784fba9fbec1162183b1ad
 3. Пропишите `YANDEX_OAUTH_*` и/или `VK_OAUTH_*` в **сохранённый** файл `.env` в корне репозитория и перезапустите процесс uvicorn. После этого откройте `/login` с жёстким обновлением (Ctrl+F5).
 
-**VK ID «вход в одно касание»** на `/login` подключается через официальный SDK (Floating One Tap). В настройках приложения VK в качестве **доверенного/базового URL** и адреса редиректа должен быть тот же **`NEXT_PUBLIC_APP_URL`**, что и у бэкенда (без завершающего слэша), иначе виджет и обмен кода не сойдутся с OAuth. Используются те же `VK_OAUTH_CLIENT_ID` и секрет, что и для кнопки «VK ID». Опционально **`VK_ID_WIDGET_APP_NAME`** — подпись в углу экрана (иначе — `OPENROUTER_APP_TITLE`). После успешного входа браузер отправляет `access_token` на `POST /api/auth/oauth/vk/session` и получает cookie-сессию.
-
-Кнопка **«VK ID»** (редирект без SDK) идёт через **VK ID** (`id.vk.com`, PKCE). В [кабинете VK ID](https://id.vk.com/) в списке доверенных redirect URI обязательно укажите **полный** путь **`https://<домен>/api/auth/oauth/vk/callback`** — одного только базового URL (как у виджета One Tap) может быть недостаточно. Если на экране VK появляется «Ошибка загрузки», проверьте этот URI и откройте сайт в приватном окне (блокировщики/сеть и домены `vk.ru` у формы на `id.vk.ru` иногда мешали; сервер использует `id.vk.com`).
+На `/login` VK и Яндекс ведут себя одинаково: только кнопка и переход на OAuth (без виджета One Tap). В [кабинете VK ID](https://id.vk.com/) в списке доверенных redirect URI укажите **полный** путь **`https://<домен>/api/auth/oauth/vk/callback`**. Если на экране VK появляется «Ошибка загрузки», проверьте этот URI и откройте сайт в приватном окне (блокировщики/сеть иногда мешают; сервер использует `id.vk.com`, PKCE).
 
 Чтобы выдать доступ к админке, выставьте **`is_admin`** в БД — см. раздел «Администраторы» выше.
 

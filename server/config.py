@@ -48,8 +48,6 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("VK_OAUTH_CLIENT_SECRET", "VK_OAUTH_SECRET_KEY"),
     )
-    # Подпись в виджете VK ID Floating One Tap; если пусто — OPENROUTER_APP_TITLE
-    vk_id_widget_app_name: str = Field(default="", validation_alias="VK_ID_WIDGET_APP_NAME")
     oauth_new_user_balance: str = Field(default="0", validation_alias="OAUTH_NEW_USER_BALANCE")
 
     internal_api_secret: str = Field(default="", validation_alias="INTERNAL_API_SECRET")

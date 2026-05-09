@@ -19,11 +19,4 @@ def public_config():
     if s.yookassa_enabled:
         if s.yookassa_shop_id:
             out["yookassaShopId"] = s.yookassa_shop_id
-    if s.vk_oauth_configured:
-        try:
-            out["vkAppId"] = int(s.vk_oauth_client_id.strip())
-        except ValueError:
-            pass
-        title = s.vk_id_widget_app_name.strip() or s.openrouter_app_title
-        out["vkOneTapAppName"] = title
     return out
