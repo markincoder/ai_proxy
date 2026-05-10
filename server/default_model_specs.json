@@ -90,24 +90,6 @@
     "supports_coding": true
   },
   {
-    "slug": "inclusionai/ring-2.6-1t:free",
-    "display_name": "Ring 2.6 1T (free)",
-    "provider": "Inclusion AI",
-    "description_ru": "Ring 2.6 — мощная открытая модель большого масштаба на бесплатном маршруте (экспериментально, зависит от загрузки).",
-    "pricing_note_ru": "0 ₽. Бесплатный сегмент каталога.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
-    "fixed_price": null,
-    "is_free": true,
-    "supports_vision": true,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
     "slug": "minimax/minimax-m2.5:free",
     "display_name": "MiniMax M2.5 (free)",
     "provider": "MiniMax",

@@ -1,4 +1,4 @@
-"""Инициализация БД и загрузка каталога моделей из `data/default_model_specs.json`."""
+"""Инициализация БД и загрузка каталога моделей из `server/default_model_specs.json`."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .models import AiModel, Base, ChatThread, SiteBanner, User
 
 
 def _catalog_specs_path() -> Path:
-    return REPO_ROOT / "data" / "default_model_specs.json"
+    return REPO_ROOT / "server" / "default_model_specs.json"
 
 
 # В образе Docker копируется в `.seed/`; при пустом томе `data/` файл подставляется при первом старте.

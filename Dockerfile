@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN mkdir -p .seed
-COPY data/default_model_specs.json .seed/default_model_specs.json
+COPY server/default_model_specs.json .seed/default_model_specs.json
 
 COPY server ./server
 

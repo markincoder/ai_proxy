@@ -705,8 +705,14 @@ async function main() {
       if (!isGuest) schedulePersistLastModel(qModel);
     } else {
       const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
+      let hasSavedSlug = false;
       if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
         selectedSlug = savedSlug;
+        hasSavedSlug = true;
+      }
+      if (isGuest && !hasSavedSlug) {
+        const freeSlug = chatModels.find((x) => x.slug === "openrouter/free")?.slug;
+        if (freeSlug) selectedSlug = freeSlug;
       }
       if (
         !isGuest &&

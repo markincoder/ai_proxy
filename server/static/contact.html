@@ -50,11 +50,11 @@
         <form id="support-form" class="support-form">
           <div class="support-field">
             <label for="support-subject">Тема обращения</label>
-            <input type="text" id="support-subject" name="subject" maxlength="255" required />
+            <input type="text" id="support-subject" name="subject" minlength="3" maxlength="255" required />
           </div>
           <div class="support-field">
             <label for="support-message">Ваше сообщение</label>
-            <textarea id="support-message" name="message" rows="5" maxlength="8000" required></textarea>
+            <textarea id="support-message" name="message" rows="5" minlength="4" maxlength="8000" required></textarea>
           </div>
           <div class="support-field">
             <label for="support-captcha-answer">Проверка</label>

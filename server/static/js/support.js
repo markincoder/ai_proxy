@@ -37,6 +37,35 @@
     el.textContent = text;
   }
 
+  function formatApiError(detail) {
+    if (typeof detail === "string") return detail;
+    if (!Array.isArray(detail)) return "";
+    const parts = [];
+    detail.forEach((err) => {
+      if (!err || typeof err !== "object") return;
+      const loc = Array.isArray(err.loc) ? err.loc : [];
+      const field = loc.includes("subject")
+        ? "Тема"
+        : loc.includes("message")
+          ? "Сообщение"
+          : loc.includes("captchaToken") || loc.includes("captchaAnswer")
+            ? "Капча"
+            : null;
+      if (err.type === "string_too_short" && err.ctx?.min_length) {
+        parts.push(`${field || "Поле"}: минимум ${err.ctx.min_length} символа`);
+        return;
+      }
+      if (err.type === "missing") {
+        parts.push(field ? `${field}: обязательное поле` : "Обязательное поле");
+        return;
+      }
+      if (typeof err.msg === "string") {
+        parts.push(field ? `${field}: ${err.msg}` : err.msg);
+      }
+    });
+    return parts.filter(Boolean).join(". ");
+  }
+
   function setNavUnreadBadge(count) {
     const link = $("nav-contact");
     if (!link) return;
@@ -256,7 +285,8 @@
         });
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
-          showMsg(j.detail || "Не удалось отправить обращение.", true);
+          const msg = formatApiError(j.detail) || "Не удалось отправить обращение.";
+          showMsg(msg, true);
           await refreshCaptcha();
           return;
         }
@@ -267,7 +297,6 @@
         showMsg("Обращение отправлено. Мы ответим в ближайшее время.", false);
         await refreshCaptcha();
         await loadTickets();
-        if (ticket && ticket.id) await openTicket(ticket.id);
       } catch {
         showMsg("Ошибка отправки. Попробуйте ещё раз.", true);
         await refreshCaptcha();
@@ -294,7 +323,8 @@
         });
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
-          showMsg(j.detail || "Не удалось отправить ответ.", true);
+          const msg = formatApiError(j.detail) || "Не удалось отправить ответ.";
+          showMsg(msg, true);
           return;
         }
         $("support-reply-message").value = "";
