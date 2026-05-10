@@ -115,3 +115,26 @@ def schedule_payment_notification(
         _notify_admin(subject, body)
 
     _fire_and_forget(run)
+
+
+def schedule_support_message_notification(
+    ticket_id: str,
+    user_id: str,
+    public_label: str,
+    subject: str,
+    message: str,
+) -> None:
+    def run() -> None:
+        subject_line = f"[II Proxy] Обращение в поддержку: {public_label}"
+        body = (
+            "Новое сообщение пользователя в поддержку.\n\n"
+            f"ID обращения: {ticket_id}\n"
+            f"Пользователь: {public_label}\n"
+            f"ID пользователя: {user_id}\n"
+            f"Тема: {subject}\n\n"
+            "Сообщение:\n"
+            f"{message}\n"
+        )
+        _notify_admin(subject_line, body)
+
+    _fire_and_forget(run)

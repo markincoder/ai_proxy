@@ -447,10 +447,12 @@ async function main() {
 
   if (!isGuest && cfg && cfg.yookassaEnabled && btnPay) {
     const shopId = cfg.yookassaShopId ? String(cfg.yookassaShopId).trim() : "";
-    const baseRaw = cfg.publicAppUrl
-      ? String(cfg.publicAppUrl).trim()
-      : window.location.origin;
-    const base = baseRaw.replace(/\/$/, "");
+    // Не подставлять только publicAppUrl из .env: при www / другом алиасе домена редирект с ЮKassa
+    // уходит на «канонический» хост без cookie → гость → sync-simplepay не вызывается, баланс не растёт.
+    const base = (typeof window !== "undefined" ? window.location.origin : "").replace(
+      /\/$/,
+      "",
+    );
 
     if (shopId) {
       btnPay.style.display = "";
@@ -624,7 +626,7 @@ async function main() {
 
       if (treatAsSuccess && oid && cfg.yookassaEnabled && !isGuest) {
         let lastSd = {};
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 8; i++) {
           const sr = await api("/api/payments/sync-simplepay", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -633,7 +635,7 @@ async function main() {
           const sd = await sr.json().catch(() => ({}));
           lastSd = sd;
           if (sd.credited === true || sd.alreadyDone === true) break;
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 2500));
         }
         if (
           lastSd.matchedPayment === true &&
@@ -644,6 +646,10 @@ async function main() {
             "Платёж в ЮKassa найден, но баланс не изменён (несовпадение суммы с заказом или ошибка). Если деньги списались — сохраните чек и обратитесь в поддержку.";
           errEl.style.display = "block";
         }
+      } else if (treatAsSuccess && oid && cfg.yookassaEnabled && isGuest) {
+        errEl.textContent =
+          "Оплата прошла, но вы не авторизованы на этом адресе — баланс не обновился. Зайдите на сайт с того же домена, на котором входили перед оплатой (например с www или без), войдите и обновите страницу. При необходимости укажите в поддержке номер платежа из кабинета ЮKassa.";
+        errEl.style.display = "block";
       }
       try {
         sessionStorage.removeItem("ai_proxy_last_pay_order");
@@ -1037,7 +1043,7 @@ async function main() {
       }
     }
   }
-  const history = [];
+  const chatHistory = [];
   /** Пока идёт генерация видео — не переключать диалог/модель. */
   let videoGenInProgress = false;
 
@@ -1262,11 +1268,11 @@ async function main() {
   }
 
   function messagesForRequest() {
-    return history.map((m) => ({ role: m.role, content: m.content }));
+    return chatHistory.map((m) => ({ role: m.role, content: m.content }));
   }
 
   function deriveTitleFromHistory() {
-    for (const m of history) {
+    for (const m of chatHistory) {
       if (m.role !== "user") continue;
       const c = m.content;
       let line = "";
@@ -1476,7 +1482,7 @@ async function main() {
 
   function renderChatFromHistory() {
     listEl.innerHTML = "";
-    for (const msg of history) {
+    for (const msg of chatHistory) {
       if (msg.role === "user") {
         if (msg.meta && msg.meta.voiceMessage === true) {
           appendUserVoiceBubble({
@@ -1551,9 +1557,11 @@ async function main() {
   async function persistThread() {
     if (isGuest) return;
     if (!currentConversationId) return;
-    if (history.length === 0) return;
+    if (chatHistory.length === 0) return;
     try {
-      const messages = JSON.parse(JSON.stringify(sanitizeMessagesForPersist(history)));
+      const messages = JSON.parse(
+        JSON.stringify(sanitizeMessagesForPersist(chatHistory)),
+      );
       const title = deriveTitleFromHistory();
       await api(
         `/api/v1/conversations/${encodeURIComponent(currentConversationId)}`,
@@ -1579,7 +1587,7 @@ async function main() {
       return;
     }
     if (!currentConversationId) return;
-    if (history.length === 0) {
+    if (chatHistory.length === 0) {
       await api(`/api/v1/conversations/${encodeURIComponent(currentConversationId)}`, {
         method: "DELETE",
       });
@@ -1599,9 +1607,9 @@ async function main() {
     if (!r.ok) return;
     const t = await r.json();
     currentConversationId = t.id;
-    history.length = 0;
+    chatHistory.length = 0;
     for (const m of t.messages || []) {
-      history.push(m);
+      chatHistory.push(m);
     }
     if (t.modelSlug && chatModels.some((x) => x.slug === t.modelSlug)) {
       setSelectedSlug(t.modelSlug);
@@ -1615,7 +1623,7 @@ async function main() {
     if (streaming || transcribing || videoGenInProgress) return;
     await abandonOrPersistCurrent();
     currentConversationId = null;
-    history.length = 0;
+    chatHistory.length = 0;
     listEl.innerHTML = "";
     errEl.style.display = "none";
     errEl.textContent = "";
@@ -1641,7 +1649,7 @@ async function main() {
   async function initConversations() {
     if (isGuest) {
       currentConversationId = null;
-      history.length = 0;
+      chatHistory.length = 0;
       listEl.innerHTML = "";
       errEl.style.display = "none";
       errEl.textContent = "";
@@ -1653,7 +1661,7 @@ async function main() {
     const list = await r.json();
     if (honorExplicitModelChoice) {
       currentConversationId = null;
-      history.length = 0;
+      chatHistory.length = 0;
       listEl.innerHTML = "";
       errEl.style.display = "none";
       errEl.textContent = "";
@@ -1676,7 +1684,7 @@ async function main() {
     selectedSlug = slug;
     sessionStorage.setItem(MODEL_STORAGE_KEY, slug);
     currentConversationId = null;
-    history.length = 0;
+    chatHistory.length = 0;
     listEl.innerHTML = "";
     errEl.style.display = "none";
     errEl.textContent = "";
@@ -1812,7 +1820,7 @@ async function main() {
         voiceTranscript: text,
         ...(safeName ? { fileName: safeName } : {}),
       };
-      history.push({
+      chatHistory.push({
         role: "user",
         content: [{ type: "text", text }],
         meta: voiceMeta,
@@ -2035,7 +2043,7 @@ async function main() {
 
     const asst = { role: "assistant", content: acc };
     if (imageUrls.length) asst.imageUrls = imageUrls;
-    history.push(asst);
+    chatHistory.push(asst);
     typing.remove();
 
     const me2 = await api("/api/auth/me").then((r) => r.json());
@@ -2071,7 +2079,7 @@ async function main() {
           srcSpeech === "file"
             ? `📎 ${fnSpeech || "файл"}`
             : "🎤 голос";
-        history.push({
+        chatHistory.push({
           role: "user",
           content: [{ type: "text", text: userLineSpeech }],
           meta: {
@@ -2289,7 +2297,7 @@ async function main() {
       listEl.scrollTop = listEl.scrollHeight;
     }
 
-    async function runVideoGeneration() {
+  async function runVideoGeneration() {
       if (videoGenInProgress) return;
       const prompt = videoPromptEl.value.trim();
       if (!prompt) return;
@@ -2320,7 +2328,7 @@ async function main() {
       }
 
       const userLine = `🎬 Видео (${modelDisplayName(mod.slug)})\n${prompt}`;
-      history.push({
+      chatHistory.push({
         role: "user",
         content: userLine,
         meta: {
@@ -2356,7 +2364,7 @@ async function main() {
       }
 
       async function pushVideoAssistantRow(contentStr, metaObj) {
-        history.push({
+        chatHistory.push({
           role: "assistant",
           content: contentStr,
           meta: metaObj,
@@ -2709,7 +2717,7 @@ async function main() {
     inputEl.value = "";
 
     await ensureConversation();
-    history.push({ role: "user", content: text });
+    chatHistory.push({ role: "user", content: text });
     appendUserBubble(text);
     await runChat();
   });
@@ -2776,7 +2784,7 @@ async function main() {
       { type: "text", text },
       { type: "image_url", image_url: { url: b64 } },
     ];
-    history.push({ role: "user", content: userContent });
+    chatHistory.push({ role: "user", content: userContent });
     appendUserMessageDisplay(userContent);
     await runChat();
   });

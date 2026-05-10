@@ -187,6 +187,25 @@
       .admin-threads-list button:hover {
         text-decoration: underline;
       }
+      .admin-support-thread {
+        margin-top: 1rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border);
+      }
+      .admin-support-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .admin-support-meta {
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin: 0.4rem 0 0.75rem;
+      }
+      .admin-support-reply textarea {
+        min-height: 5rem;
+      }
       .admin-search-row {
         display: flex;
         flex-wrap: wrap;
@@ -236,6 +255,7 @@
         <div class="admin-tabs" role="tablist">
           <button type="button" class="admin-tab admin-tab--active" data-tab="models" id="tab-models">Модели</button>
           <button type="button" class="admin-tab" data-tab="users" id="tab-users">Пользователи</button>
+          <button type="button" class="admin-tab" data-tab="support" id="tab-support">Обращения</button>
           <button type="button" class="admin-tab" data-tab="moderation" id="tab-moderation">Модерация</button>
           <button type="button" class="admin-tab" data-tab="banner" id="tab-banner">Объявление</button>
           <button type="button" class="admin-tab" data-tab="news" id="tab-news">Новости</button>
@@ -310,6 +330,47 @@
               <button type="button" class="btn btn-primary" id="btn-purge-stale">Удалить такие диалоги</button>
             </div>
             <div id="purge-err" class="err" style="display: none; margin-top: 0.5rem"></div>
+          </div>
+        </section>
+
+        <section id="panel-support" class="admin-panel" hidden>
+          <p class="page-lead" style="font-size: 0.88rem; margin-bottom: 0.75rem">
+            Обращения пользователей: новые сообщения подсвечиваются по счётчику, ответы — внизу.
+          </p>
+          <div class="admin-search-row">
+            <button type="button" class="btn btn-primary" id="support-refresh">Обновить</button>
+          </div>
+          <div id="support-err" class="err" style="display: none; margin-bottom: 0.75rem"></div>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="support-table">
+              <thead>
+                <tr>
+                  <th>Тема</th>
+                  <th>Пользователь</th>
+                  <th>Обновлено</th>
+                  <th>Непрочитано</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="support-tbody"></tbody>
+            </table>
+          </div>
+          <div class="admin-support-thread" id="support-thread" style="display: none">
+            <div class="admin-support-header">
+              <h3 id="support-thread-title" style="margin: 0; font-size: 1rem">Обращение</h3>
+              <button type="button" class="btn" id="support-thread-close">Скрыть</button>
+            </div>
+            <div id="support-thread-meta" class="admin-support-meta"></div>
+            <div id="support-thread-messages" class="support-messages"></div>
+            <form id="support-reply-form" class="admin-support-reply">
+              <div class="admin-field">
+                <label for="support-reply-text">Ответ</label>
+                <textarea id="support-reply-text" required></textarea>
+              </div>
+              <div class="admin-actions">
+                <button type="submit" class="btn btn-primary">Отправить</button>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -687,6 +748,141 @@
         userSearchQ = document.getElementById("users-search").value.trim();
         clearTimeout(userSearchTimer);
         userSearchTimer = setTimeout(() => loadUsers(), 400);
+      });
+
+      let activeSupportTicketId = null;
+
+      function formatSupportUser(u) {
+        if (!u) return "—";
+        if (u.username) return u.username;
+        if (u.vkUserId) return `VK ${u.vkUserId}`;
+        if (u.yandexUserId) return `Яндекс ${u.yandexUserId}`;
+        return u.id || "—";
+      }
+
+      function formatSupportDate(raw) {
+        if (!raw) return "—";
+        const d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return raw;
+        return d.toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" });
+      }
+
+      function renderSupportMessages(list) {
+        const wrap = document.getElementById("support-thread-messages");
+        if (!wrap) return;
+        wrap.innerHTML = "";
+        if (!Array.isArray(list) || list.length === 0) {
+          wrap.textContent = "Сообщений пока нет.";
+          return;
+        }
+        list.forEach((m) => {
+          const item = document.createElement("div");
+          item.className = "support-message";
+          if (m.senderRole === "admin") {
+            item.classList.add("support-message--admin");
+          }
+          const meta = document.createElement("div");
+          meta.className = "support-message-meta";
+          meta.textContent = `${m.senderRole === "admin" ? "Администратор" : "Пользователь"} · ${formatSupportDate(m.createdAt)}`;
+          const body = document.createElement("div");
+          body.textContent = m.body || "";
+          item.appendChild(meta);
+          item.appendChild(body);
+          wrap.appendChild(item);
+        });
+      }
+
+      async function loadSupportTickets() {
+        const err = document.getElementById("support-err");
+        const tb = document.getElementById("support-tbody");
+        err.style.display = "none";
+        tb.innerHTML = "<tr><td colspan='5'>Загрузка…</td></tr>";
+        const r = await api("/api/admin/support/tickets");
+        if (!r.ok) {
+          err.textContent = "Не удалось загрузить обращения";
+          err.style.display = "block";
+          tb.innerHTML = "";
+          return;
+        }
+        const rows = await r.json();
+        tb.innerHTML = rows
+          .map((t) => {
+            const unread = t.adminUnreadCount > 0 ? `<span class="support-unread-badge">${t.adminUnreadCount}</span>` : "—";
+            const preview = t.lastMessagePreview ? esc(t.lastMessagePreview) : "—";
+            return `<tr>
+                <td>${esc(t.subject || "Без темы")}<br/><span style="color:var(--muted);font-size:0.74rem">${preview}</span></td>
+                <td>${esc(formatSupportUser(t.user))}<br/><span style="color:var(--muted);font-size:0.74rem"><code>${esc(
+                  t.user?.id || ""
+                )}</code></span></td>
+                <td>${esc(formatSupportDate(t.updatedAt))}</td>
+                <td>${unread}</td>
+                <td><button type="button" class="btn" data-support-open="${esc(t.id)}">Открыть</button></td>
+              </tr>`;
+          })
+          .join("");
+      }
+
+      async function openSupportTicket(id) {
+        const err = document.getElementById("support-err");
+        err.style.display = "none";
+        const r = await api(`/api/admin/support/tickets/${encodeURIComponent(id)}`);
+        if (!r.ok) {
+          err.textContent = "Не удалось открыть обращение";
+          err.style.display = "block";
+          return;
+        }
+        const t = await r.json();
+        activeSupportTicketId = t.id;
+        document.getElementById("support-thread-title").textContent = t.subject || "Обращение";
+        document.getElementById("support-thread-meta").textContent = `ID: ${t.id} · ${formatSupportUser(t.user)} · ${formatSupportDate(t.updatedAt)}`;
+        renderSupportMessages(t.messages || []);
+        document.getElementById("support-thread").style.display = "block";
+        await loadSupportTickets();
+      }
+
+      document.getElementById("support-refresh").addEventListener("click", () => loadSupportTickets());
+      document.getElementById("support-thread-close").addEventListener("click", () => {
+        document.getElementById("support-thread").style.display = "none";
+        activeSupportTicketId = null;
+      });
+
+      document.getElementById("support-tbody").addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-support-open]");
+        if (!btn) return;
+        const id = btn.getAttribute("data-support-open");
+        if (id) openSupportTicket(id);
+      });
+
+      document.getElementById("support-reply-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("support-err");
+        err.style.display = "none";
+        if (!activeSupportTicketId) {
+          err.textContent = "Выберите обращение.";
+          err.style.display = "block";
+          return;
+        }
+        const text = document.getElementById("support-reply-text").value.trim();
+        if (!text) return;
+        const r = await api(`/api/admin/support/tickets/${encodeURIComponent(activeSupportTicketId)}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        if (!r.ok) {
+          let msg = "Не удалось отправить ответ";
+          try {
+            const j = await r.json();
+            msg = j.detail || msg;
+          } catch {
+            /* ignore */
+          }
+          err.textContent = msg;
+          err.style.display = "block";
+          return;
+        }
+        document.getElementById("support-reply-text").value = "";
+        await openSupportTicket(activeSupportTicketId);
       });
 
       async function refreshStalePreview() {
@@ -1345,6 +1541,7 @@
           });
           document.getElementById("panel-models").hidden = tab !== "models";
           document.getElementById("panel-users").hidden = tab !== "users";
+          document.getElementById("panel-support").hidden = tab !== "support";
           document.getElementById("panel-moderation").hidden = tab !== "moderation";
           document.getElementById("panel-banner").hidden = tab !== "banner";
           document.getElementById("panel-news").hidden = tab !== "news";
@@ -1352,6 +1549,7 @@
           document.getElementById("panel-db").hidden = tab !== "db";
           if (tab === "errors") loadErrorLogs();
           if (tab === "news") loadNews();
+          if (tab === "support") loadSupportTickets();
         });
       });
 

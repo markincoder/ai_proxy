@@ -343,16 +343,7 @@
           }
           if (!validatePasswordFields()) return;
 
-          const ru = await api("/api/auth/set-username", {
-            method: "POST",
-            body: JSON.stringify({ username }),
-          });
-          if (!ru.ok) {
-            showAccountMsg(await detailFromResponse(ru, "Не удалось сохранить логин"), true);
-            return;
-          }
-
-          const payload = { newPassword: np, newPasswordRepeat: npr };
+          const payload = { username, newPassword: np, newPasswordRepeat: npr };
           if (accountHasPassword) payload.currentPassword = cur;
           const rp = await api("/api/auth/change-password", {
             method: "POST",

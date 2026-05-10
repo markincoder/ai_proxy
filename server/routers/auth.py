@@ -11,6 +11,7 @@ from ..config import get_settings
 from ..deps import blocked_user_detail, get_db, require_user_id, user_public_identifier
 from ..models import AiModel, User
 from ..services.notify import schedule_new_user_notification
+from ..passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -45,6 +46,7 @@ class PatchMeBody(BaseModel):
 class ChangePasswordBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    username: Optional[str] = Field(None, min_length=3, max_length=32)
     current_password: Optional[str] = Field(None, alias="currentPassword")
     new_password: str = Field(..., min_length=8, max_length=128, alias="newPassword")
     new_password_repeat: str = Field(..., alias="newPasswordRepeat", min_length=8, max_length=128)
@@ -259,6 +261,22 @@ def change_password(
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    raw_login = (body.username or "").strip()
+    if (user.username or "").strip():
+        if raw_login and raw_login != (user.username or "").strip():
+            raise HTTPException(status_code=403, detail="Логин уже задан и не может быть изменён")
+    else:
+        if not raw_login:
+            raise HTTPException(status_code=400, detail="Укажите логин")
+        if not _USERNAME_RE.match(raw_login):
+            raise HTTPException(
+                status_code=400,
+                detail="Логин: 3–32 символа, латинские буквы, цифры, точка, дефис или подчёркивание",
+            )
+        existing = db.query(User).filter(User.username == raw_login).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Этот логин уже занят")
+        user.username = raw_login
     if body.new_password != body.new_password_repeat:
         raise HTTPException(status_code=400, detail="Пароли не совпадают")
     if user.password_hash:
@@ -268,5 +286,9 @@ def change_password(
         if not verify_password(cur, user.password_hash):
             raise HTTPException(status_code=401, detail="Неверный текущий пароль")
     user.password_hash = hash_password(body.new_password)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Этот логин уже занят") from None
     return {"ok": True}

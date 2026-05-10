@@ -43,6 +43,7 @@ class User(Base):
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
     payment_orders: Mapped[list["PaymentOrder"]] = relationship(back_populates="user")
     chat_threads: Mapped[list["ChatThread"]] = relationship(back_populates="user")
+    support_tickets: Mapped[list["SupportTicket"]] = relationship(back_populates="user")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -95,6 +96,51 @@ class ChatThread(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="chat_threads")
+
+
+class SupportTicket(Base):
+    """Обращения пользователей в поддержку (переписка)."""
+
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        Index("ix_support_tickets_user_updated", "user_id", "updated_at"),
+        Index("ix_support_tickets_admin_unread", "admin_unread_count", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"))
+    subject: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(24), default="open")
+    last_sender_role: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    last_message_preview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_unread_count: Mapped[int] = mapped_column(Integer, default=0)
+    admin_unread_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="support_tickets")
+    messages: Mapped[list["SupportMessage"]] = relationship(
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="SupportMessage.created_at",
+    )
+
+
+class SupportMessage(Base):
+    """Сообщения в обращении пользователя."""
+
+    __tablename__ = "support_messages"
+    __table_args__ = (Index("ix_support_messages_ticket_created", "ticket_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_id: Mapped[str] = mapped_column(String(36), ForeignKey("support_tickets.id", ondelete="CASCADE"))
+    sender_role: Mapped[str] = mapped_column(String(16))  # user | admin
+    sender_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    ticket: Mapped["SupportTicket"] = relationship(back_populates="messages")
 
 
 class SiteBanner(Base):

@@ -11,7 +11,7 @@ from .config import get_settings
 from .database import init_db
 from .error_logging import install_exception_logging
 from .routers import admin as admin_router
-from .routers import auth, chat, conversations, developer, meta, models_list, newsfeed, oauth, payments, video_jobs
+from .routers import auth, chat, conversations, developer, meta, models_list, newsfeed, oauth, payments, support, video_jobs
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(models_list.router)
     app.include_router(meta.router)
     app.include_router(payments.router)
+    app.include_router(support.router)
     app.include_router(video_jobs.router)
     app.include_router(developer.router)
     app.include_router(newsfeed.router)

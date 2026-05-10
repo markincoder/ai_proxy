@@ -7,3 +7,5 @@ venv/
 data/*.db
 *.db
 data/uploads/
+.env.prod
+.gitignore

@@ -38,9 +38,62 @@
           </li>
         </ul>
       </article>
+
+      <section class="support-section" aria-labelledby="support-form-title">
+        <h2 class="page-title support-title" id="support-form-title"> Или написать в поддержку</h2>
+        <p class="support-note">
+          Если вы авторизованы, обращения и ответы сохраняются в личном кабинете. Для быстрых вопросов можно использовать
+          почту или Telegram выше.
+        </p>
+        <div id="support-auth-hint" class="login-local-msg login-local-msg--err" style="display: none"></div>
+        <div id="support-msg" class="login-local-msg" style="display: none"></div>
+        <form id="support-form" class="support-form">
+          <div class="support-field">
+            <label for="support-subject">Тема обращения</label>
+            <input type="text" id="support-subject" name="subject" maxlength="255" required />
+          </div>
+          <div class="support-field">
+            <label for="support-message">Ваше сообщение</label>
+            <textarea id="support-message" name="message" rows="5" maxlength="8000" required></textarea>
+          </div>
+          <div class="support-field">
+            <label for="support-captcha-answer">Проверка</label>
+            <div class="support-captcha-row">
+              <span id="support-captcha-question" class="support-captcha-question">—</span>
+              <button type="button" class="btn" id="support-captcha-refresh">Обновить</button>
+            </div>
+            <input type="text" id="support-captcha-answer" name="captchaAnswer" maxlength="16" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </form>
+      </section>
+
+      <section class="support-section" aria-labelledby="support-list-title">
+        <h2 class="page-title support-title" id="support-list-title">Мои обращения</h2>
+        <p class="support-note">История обращений доступна после входа в аккаунт.</p>
+        <div id="support-list-empty" class="support-empty">Обращений пока нет.</div>
+        <div id="support-list" class="support-list"></div>
+      </section>
+
+      <section class="support-section" id="support-thread" hidden aria-live="polite">
+        <div class="support-thread-header">
+          <h3 class="support-thread-title" id="support-thread-subject">Обращение</h3>
+          <button type="button" class="btn" id="support-thread-close">Закрыть</button>
+        </div>
+        <div id="support-thread-meta" class="support-thread-meta"></div>
+        <div id="support-thread-messages" class="support-messages"></div>
+        <form id="support-reply-form" class="support-reply-form">
+          <div class="support-field">
+            <label for="support-reply-message">Ответить</label>
+            <textarea id="support-reply-message" rows="4" maxlength="8000" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Отправить ответ</button>
+        </form>
+      </section>
     </main>
 
     <footer class="site-footer">II Proxy</footer>
     <script src="/static/js/app-nav.js?v=2" defer></script>
+    <script src="/static/js/support.js?v=1" defer></script>
   </body>
 </html>

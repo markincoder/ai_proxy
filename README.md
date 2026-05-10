@@ -59,6 +59,10 @@
 | `PRICING_MARKUP_MULT` | Множитель наценки после пересчёта курса (по умолчанию `3`). |
 | `INTERNAL_API_SECRET` | Общий секрет для вызовов API с других сервисов (например Telegram-бота) вместе с заголовком `X-User-Id`. |
 
+**ЮKassa на сервере (не только `.env`).** Включите **`YOOKASSA_ENABLED=true`** (без этого оплата отключена), плюс **`YOOKASSA_SHOP_ID`** и **`YOOKASSA_SECRET_KEY`**. В [личном кабинете ЮKassa](https://yookassa.ru/) задайте **URL HTTP-уведомлений**: `https://<ваш-домен>/api/payments/webhook` — **без** хвостового слэша и с тем же хостом, что у сайта. Проверка: в браузере откройте `https://…/api/payments/webhook` — ожидается JSON вроде `{"ok":true,"paymentsWebhook":true}`; если был только обработчик POST, проверка URL в кабинете часто показывала **404**.  
+У **Traefik** у `iiproxy-web` перечислены конкретные **Host** (`iiproxy.ru`, `www.iiproxy.ru`, `ii-proxy.ru`, `www.ii-proxy.ru`). Открытие сайта по **другому имени** или по **IP с TLS** даёт **404 на стороне Traefik** (маршрут не найден).  
+После оплаты (Simple Pay) баланс подтягивается запросом **`/api/payments/sync-simplepay`** в браузере или через **webhook** на `/api/payments/webhook`. Если платёж прошёл, а баланс нет: чаще всего **редирект с ЮKassa ушёл не на тот хост**, где была сессия (например в `.env` указан `https://iiproxy.ru`, а вход был с `www` или с `ii-proxy.ru`) — cookie не совпали, пользователь «гость». В актуальном фронтенде возврат строится от **текущего адреса страницы**. Для уже совершённого платежа можно **войти на том же домене** и в Swagger вызвать `POST /api/payments/sync-simplepay` с телом `{"orderId":"UUID"}` (UUID из параметра `orderId` после оплаты или из кабинета по заказу).
+
 Минимальный набор для локальной проверки без оплат:
 
 - `OPENROUTER_API_KEY`
@@ -116,6 +120,8 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 4. **TLS и домен**  
    В репозитории для `iiproxy-web` заданы labels **Traefik** (маршрут по хостам `iiproxy.ru`, `www.iiproxy.ru`, `ii-proxy.ru`, `www.ii-proxy.ru`, HTTPS, ACME). Должен работать контейнер **Traefik** из того же compose и переменная **`EMAIL`** для Let’s Encrypt в окружении compose. Подставьте свои хосты в labels при необходимости.  
    В секции `environment` сервиса **`NEXT_PUBLIC_APP_URL`** должен совпадать с основным публичным URL (сейчас в compose указан `https://iiproxy.ru`); иначе поправьте значение или уберите переопределение и задайте URL только в `.env`.
+
+   Если браузер пишет про **недоверенный сертификат** после перехода на `https://…`: обычно это значит, что **Let’s Encrypt ещё не выпустил** сертификат (Traefik временно отдаёт свой). Проверьте: **`EMAIL`** задаётся при запуске compose; есть каталог **`./traefik`** с файлом **`acme.json`** и правами на запись (`chmod 600 traefik/acme.json`); DNS **A** всех доменных имён указывает на этот сервер; снаружи открыт **443** (нужен для `tlsChallenge`). Логи Traefik: `docker compose logs traefik` (строки `acme`, `certificate`). После изменений: `docker compose up -d traefik iiproxy-web`.
 
 5. **Обновление**  
    В каталоге **`iiproxy.ru`**: `git pull`. Затем из каталога с **`docker-compose.yml`**:

@@ -12,7 +12,23 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import engine, run_vacuum_and_analyze
 from ..deps import get_db, require_admin
-from ..models import AiModel, ChatThread, ErrorLog, NewsPost, SiteBanner, User
+from ..models import (
+    AiModel,
+    ChatThread,
+    ErrorLog,
+    NewsPost,
+    SiteBanner,
+    SupportMessage,
+    SupportTicket,
+    User,
+)
+
+
+def _support_preview(text: str, limit: int = 220) -> str:
+    t = (text or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    if len(t) <= limit:
+        return t
+    return t[: limit - 1].rstrip() + "…"
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -618,3 +634,110 @@ def admin_delete_news(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+# ——— Поддержка пользователей ———
+
+
+class AdminSupportReplyBody(BaseModel):
+    message: str = Field(..., min_length=1, max_length=8000)
+
+
+def _support_ticket_payload(ticket: SupportTicket, user: Optional[User]) -> dict[str, Any]:
+    return {
+        "id": ticket.id,
+        "subject": ticket.subject,
+        "status": ticket.status,
+        "lastSenderRole": ticket.last_sender_role,
+        "lastMessagePreview": ticket.last_message_preview,
+        "userUnreadCount": ticket.user_unread_count,
+        "adminUnreadCount": ticket.admin_unread_count,
+        "createdAt": (ticket.created_at.isoformat() + "Z") if ticket.created_at else None,
+        "updatedAt": (ticket.updated_at.isoformat() + "Z") if ticket.updated_at else None,
+        "user": {
+            "id": user.id if user else ticket.user_id,
+            "username": user.username if user else None,
+            "vkUserId": user.vk_user_id if user else None,
+            "yandexUserId": user.yandex_user_id if user else None,
+        },
+    }
+
+
+def _support_message_payload(msg: SupportMessage) -> dict[str, Any]:
+    return {
+        "id": msg.id,
+        "senderRole": msg.sender_role,
+        "senderId": msg.sender_id,
+        "body": msg.body,
+        "createdAt": msg.created_at.isoformat() + "Z",
+    }
+
+
+@router.get("/support/tickets")
+def admin_support_tickets(
+    _: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(SupportTicket, User)
+        .join(User, SupportTicket.user_id == User.id)
+        .order_by(SupportTicket.updated_at.desc())
+        .limit(500)
+        .all()
+    )
+    return [_support_ticket_payload(t, u) for t, u in rows]
+
+
+@router.get("/support/tickets/{ticket_id}")
+def admin_support_ticket_detail(
+    ticket_id: str,
+    _: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+    user = db.query(User).filter(User.id == ticket.user_id).first()
+    if ticket.admin_unread_count:
+        ticket.admin_unread_count = 0
+        db.commit()
+        db.refresh(ticket)
+    messages = (
+        db.query(SupportMessage)
+        .filter(SupportMessage.ticket_id == ticket_id)
+        .order_by(SupportMessage.created_at.asc())
+        .all()
+    )
+    return {
+        **_support_ticket_payload(ticket, user),
+        "messages": [_support_message_payload(m) for m in messages],
+    }
+
+
+@router.post("/support/tickets/{ticket_id}/messages")
+def admin_support_reply(
+    ticket_id: str,
+    body: AdminSupportReplyBody,
+    admin_uid: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+    msg_body = body.message.strip()
+    if not msg_body:
+        raise HTTPException(status_code=400, detail="Сообщение пустое")
+    msg = SupportMessage(
+        ticket_id=ticket.id,
+        sender_role="admin",
+        sender_id=admin_uid,
+        body=msg_body,
+    )
+    ticket.last_sender_role = "admin"
+    ticket.last_message_preview = _support_preview(msg_body)
+    ticket.user_unread_count = int(ticket.user_unread_count or 0) + 1
+    ticket.admin_unread_count = 0
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return _support_message_payload(msg)

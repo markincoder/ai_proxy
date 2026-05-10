@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -439,6 +440,17 @@ async def sync_simplepay_order(request: Request, body: SyncSimplePayBody, db: Se
     return {"credited": True, "pending": False}
 
 
+@router.get("/webhook")
+def webhook_get_probe():
+    """Проверка URL вебхука из кабинета ЮKassa."""
+    return {"ok": True, "paymentsWebhook": True}
+
+
+@router.head("/webhook")
+def webhook_head_probe():
+    return Response(status_code=200)
+
+
 @router.post("/webhook")
 async def webhook(request: Request, db: Session = Depends(get_db)):
     s = get_settings()
@@ -457,6 +469,15 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     meta = obj.get("metadata") or {}
     user_id_meta = meta.get("userId")
     order_id = meta.get("orderId")
+    if order_id is not None:
+        raw_id = str(order_id).strip()
+        order_id = raw_id if raw_id else None
+    if not order_id:
+        for key in ("customerNumber", "customer_number"):
+            val = meta.get(key)
+            if val is not None and str(val).strip():
+                order_id = str(val).strip()
+                break
     if not order_id:
         mcid = obj.get("merchant_customer_id")
         if mcid is not None and str(mcid).strip():

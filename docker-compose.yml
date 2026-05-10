@@ -130,6 +130,9 @@ services:
       - "traefik.http.routers.iiproxy.entrypoints=websecure"
       - "traefik.http.routers.iiproxy.tls=true"
       - "traefik.http.routers.iiproxy.tls.certresolver=mytlschallenge"
+      # Явный запрос одного сертификата со всеми SAN (если LE не подхватывает все имена из Rule)
+      - "traefik.http.routers.iiproxy.tls.domains[0].main=iiproxy.ru"
+      - "traefik.http.routers.iiproxy.tls.domains[0].sans=www.iiproxy.ru,ii-proxy.ru,www.ii-proxy.ru"
       - "traefik.http.services.iiproxy.loadbalancer.server.port=8000"
     networks:
       - web

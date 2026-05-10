@@ -10,7 +10,7 @@
     { href: "/settings", label: "Настройки", id: "nav-settings" },
     { href: "/admin", label: "Админка", id: "nav-admin", adminOnly: true },
     { href: "/docs", label: "API" },
-    { href: "/contact", label: "Контакты" },
+    { href: "/contact", label: "Контакты", id: "nav-contact" },
   ];
 
   function normalizePath() {

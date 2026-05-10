@@ -47,6 +47,37 @@
     }
   }
 
+  async function loadSupportUnread() {
+    try {
+      const r = await api("/api/support/unread");
+      if (!r.ok) return 0;
+      const j = await r.json().catch(() => null);
+      if (!j || typeof j !== "object") return 0;
+      const n = Number(j.unreadCount);
+      return Number.isNaN(n) ? 0 : n;
+    } catch {
+      return 0;
+    }
+  }
+
+  function setNavUnreadBadge(el, count) {
+    if (!el) return;
+    const existing = el.querySelector(".nav-link-badge");
+    if (count <= 0) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) {
+      existing.textContent = String(count);
+      return;
+    }
+    const span = document.createElement("span");
+    span.className = "nav-link-badge";
+    span.textContent = String(count);
+    span.setAttribute("aria-label", `Непрочитанных ответов: ${count}`);
+    el.appendChild(span);
+  }
+
   function formatBalance(raw) {
     if (raw == null || String(raw).trim() === "") {
       return `${Number(0).toLocaleString("ru-RU", {
@@ -109,6 +140,12 @@
     }
 
     if (me.isAdmin && navAdmin) navAdmin.style.removeProperty("display");
+
+    const navContact = document.getElementById("nav-contact");
+    if (!isGuest && navContact) {
+      const unread = await loadSupportUnread();
+      setNavUnreadBadge(navContact, unread);
+    }
 
     if (btnLogout) {
       btnLogout.onclick = async () => {
