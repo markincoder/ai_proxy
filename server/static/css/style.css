@@ -2273,19 +2273,19 @@ article.tariff-card[hidden] {
 }
 
 .pay-modal__panel .ym-payment-btn-block.ym-align-space-between {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 60%);
+  column-gap: 0.65rem;
+  row-gap: 0.65rem;
   align-items: center;
-  gap: 0.65rem;
-  row-gap: 0.85rem;
-  justify-content: flex-start;
   margin-bottom: 0;
-  padding-bottom: 2.5rem;
+  padding-bottom: 1.25rem;
 }
 
 .pay-modal__panel .ym-input-icon-rub {
-  flex: 1 1 10rem;
+  grid-column: 1;
   min-width: 0;
+  max-width: 100%;
 }
 
 .pay-modal__panel .ym-input-icon-rub .ym-input,
@@ -2293,6 +2293,17 @@ article.tariff-card[hidden] {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+.pay-modal__panel .ym-pay-actions {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .pay-modal__panel .ym-btn-pay {
@@ -2303,17 +2314,9 @@ article.tariff-card[hidden] {
   flex: 0 0 auto;
   width: 114px;
   height: 27px;
-  margin-left: 0;
-  margin-right: auto;
-  margin-bottom: 0;
+  max-width: 100%;
+  margin: 0;
   align-self: center;
-}
-
-/* Логотип на отдельной строке под суммой и кнопкой — не обрезается */
-.pay-modal__panel .ym-payment-btn-block .ym-logo {
-  flex-basis: 100%;
-  order: 3;
-  margin-top: 0.35rem;
 }
 
 .pay-modal__panel .ym-customer-info {

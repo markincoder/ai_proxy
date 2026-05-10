@@ -124,59 +124,46 @@
         <h2 id="pay-modal-title" class="pay-modal__title">Пополнение баланса</h2>
         <p id="pay-modal-err" class="pay-modal__err" style="display: none"></p>
         <form
-            id="yookassa-simple-form"
-            class="yoomoney-payment-form"
-            action="https://yookassa.ru/integration/simplepay/payment"
-            method="post"
-            accept-charset="utf-8"
-          >
-            <div class="ym-products ym-display-none">
-              <div class="ym-block-title ym-products-title">Товары</div>
-              <div class="ym-product">
-                <div class="ym-product-line">
-                  <span class="ym-product-description"
-                    ><span class="ym-product-count">1×</span>Пополнение счёта</span
-                  >
-                  <span
-                    class="ym-product-price"
-                    data-price="0"
-                    data-id="984"
-                    data-count="1"
-                    >0,00&nbsp;₽</span
-                  >
-                </div>
-                <input type="hidden" name="text" value="Пополнение счёта" />
-                <input type="hidden" name="price" value="0" />
-                <input type="hidden" name="quantity" value="1" />
-                <input type="hidden" name="paymentSubjectType" value="service" />
-                <input type="hidden" name="paymentMethodType" value="full_prepayment" />
-                <input type="hidden" name="tax" value="1" />
+          id="yookassa-simple-form"
+          class="yoomoney-payment-form"
+          action="https://yookassa.ru/integration/simplepay/payment"
+          method="post"
+          accept-charset="utf-8"
+        >
+          <div class="ym-products ym-display-none">
+            <div class="ym-block-title ym-products-title">Товары</div>
+            <div class="ym-product">
+              <div class="ym-product-line">
+                <span class="ym-product-description"><span class="ym-product-count">1×</span></span>
+                <span class="ym-product-price" data-price="0.0" data-id="584" data-count="1">0,00&nbsp;₽</span>
               </div>
+              <input type="hidden" name="text" value="Пополнение счёта" />
+              <input type="hidden" name="price" value="0.0" />
+              <input type="hidden" name="quantity" value="1" />
+              <input type="hidden" name="paymentSubjectType" value="service" />
+              <input type="hidden" name="paymentMethodType" value="full_prepayment" />
+              <input type="hidden" name="tax" value="1" />
             </div>
-            <input type="hidden" name="ym_merchant_receipt" value="" />
-            <!-- Email для чека ЮKassa: технический адрес, без сбора почты пользователя -->
-            <input type="hidden" name="cps_email" value="receipt@example.com" />
-            <div class="ym-hidden-inputs">
-              <input name="shopSuccessURL" type="hidden" value="" />
-              <input name="shopFailURL" type="hidden" value="" />
-            </div>
+          </div>
+          <input type="hidden" name="ym_merchant_receipt" value="" />
+
+          <div class="ym-customer-info">
+            <input class="ym-input" name="email" placeholder="Телефон или Email для чека" type="text" />
+          </div>
+
+          <div class="ym-hidden-inputs">
+            <input name="shopSuccessURL" type="hidden" value="" />
+            <input name="shopFailURL" type="hidden" value="" />
             <input name="customerNumber" type="hidden" value="" />
-            <input name="sumEqualPrice" type="hidden" value="true" />
-            <div class="ym-payment-btn-block ym-before-line ym-align-space-between">
-              <div class="ym-input-icon-rub">
-                <input
-                  name="sum"
-                  placeholder="0.00"
-                  class="ym-input ym-sum-input ym-required-input"
-                  type="number"
-                  step="any"
-                />
-              </div>
-              <button
-                data-text="Заплатить"
-                class="ym-btn-pay ym-result-price"
-                type="submit"
-              >
+          </div>
+
+          <input name="sumEqualPrice" type="hidden" value="true" />
+          <div class="ym-payment-btn-block ym-before-line ym-align-space-between">
+            <div class="ym-input-icon-rub">
+              <input name="sum" placeholder="0.00" class="ym-input ym-sum-input ym-required-input" type="number" step="any" />
+            </div>
+            <div class="ym-pay-actions">
+              <button data-text="Заплатить" class="ym-btn-pay ym-result-price" type="submit">
                 <span class="ym-text-crop">Заплатить</span>
                 <span class="ym-price-output"></span>
               </button>
@@ -188,14 +175,15 @@
                 alt="ЮKassa"
               />
             </div>
-            <input name="shopId" type="hidden" value="" />
-          </form>
+          </div>
+          <input name="shopId" type="hidden" value="" />
+        </form>
       </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/js/app-nav.js?v=2" defer></script>
-    <script type="module" src="/static/js/chat.js?v=76"></script>
+    <script type="module" src="/static/js/chat.js?v=78"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();
