@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     forbidden_message_keywords: str = Field(default="", validation_alias="FORBIDDEN_MESSAGE_KEYWORDS")
 
     # Каталог для загруженных картинок новостей (относительный путь — от корня репо; абсолютный — как есть).
-    # В Docker монтируйте том на этот каталог вместе с `data/app.db`.
+    # В Docker: том на `/app/data` — БД, каталог моделей и `uploads/` в одном месте.
     news_upload_dir: str = Field(
         default="data/uploads/news",
         validation_alias=AliasChoices("NEWS_UPLOAD_DIR", "NEWS_IMAGE_UPLOAD_DIR"),

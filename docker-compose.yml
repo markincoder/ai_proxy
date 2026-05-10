@@ -1,0 +1,226 @@
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/acme/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik:/acme
+    networks:
+      - web
+
+# ================= Langflow =================
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: langflow
+    restart: unless-stopped
+    environment:
+      - LANGFLOW_DATABASE_URL=sqlite:////data/langflow.db
+      - LANGFLOW_HOST=0.0.0.0
+      - LANGFLOW_PORT=7860
+
+# --- ??? ??? ??? ?????? ?????? ???????? ---
+      - LANGFLOW_AUTO_LOGIN=true
+      - LANGFLOW_SKIP_AUTH_AUTO_LOGIN=true
+      - LANGFLOW_NEW_USER_EXCEPTIONS=admin
+      # ------------------------------------------    
+    volumes:
+      - ./langflow_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.langflow.rule=Host(`ai.sergeymarkin.ru`)"
+      - "traefik.http.routers.langflow.entrypoints=websecure"
+      - "traefik.http.routers.langflow.tls=true"
+      - "traefik.http.routers.langflow.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.langflow.loadbalancer.server.port=7860"
+      - "traefik.http.middlewares.langflow-auth.basicauth.users=admin:$$apr1$$lO6pp6M0$$byZnEir8t8yKDyFSQY9Ou1"
+      - "traefik.http.routers.langflow.middlewares=langflow-auth"
+    networks:
+      - web  
+
+# ================= Pletelnya =================
+  pletelnya-php:
+    image: php:8.2-fpm
+    container_name: pletelnya-php
+    restart: unless-stopped
+    volumes:
+      - ./pletelnya:/var/www/html
+    networks:
+      - web
+
+  pletelnya-nginx:
+    image: nginx:alpine
+    container_name: pletelnya-nginx
+    restart: unless-stopped
+    depends_on:
+      - pletelnya-php
+    volumes:
+      - ./pletelnya:/var/www/html:ro
+      - ./nginx/pletelnya.conf:/etc/nginx/conf.d/default.conf:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pletelnya.rule=Host(`pletelnya.ru`) || Host(`www.pletelnya.ru`)"
+      - "traefik.http.routers.pletelnya.entrypoints=websecure"
+      - "traefik.http.routers.pletelnya.tls=true"
+      - "traefik.http.routers.pletelnya.tls.certresolver=mytlschallenge"
+    networks:
+      - web
+
+  # ================= Sergeymarkin =================
+  # По умолчанию: compose в ~/docker, код и .env в ~/docker/sergeymarkin/ (отдельный .env у родителя не нужен).
+  # Клон репозитория в один каталог (Dockerfile рядом с compose): в корневом .env задайте SERGEYMARKIN_APP_DIR=.
+  sergeymarkin-web:
+    build:
+      context: ${SERGEYMARKIN_APP_DIR:-./sergeymarkin}
+      dockerfile: Dockerfile
+    image: sergeymarkin-web:local
+    container_name: sergeymarkin-web
+    restart: unless-stopped
+    env_file:
+      - ${SERGEYMARKIN_APP_DIR:-./sergeymarkin}/.env
+    environment:
+      SITE_URL: https://sergeymarkin.ru
+    volumes:
+      # SQLite в database/; RAG — в backend/rag_data/ в образе (не под томом).
+      - sergeymarkin_database:/app/database
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sergeymarkin.rule=Host(`sergeymarkin.ru`) || Host(`www.sergeymarkin.ru`)"
+      - "traefik.http.routers.sergeymarkin.entrypoints=websecure"
+      - "traefik.http.routers.sergeymarkin.tls=true"
+      - "traefik.http.routers.sergeymarkin.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.sergeymarkin.loadbalancer.server.port=8000"
+    networks:
+      - web
+
+  # ================= II Proxy (iiproxy) =================
+  # По умолчанию: compose в ~/docker, код и .env в корне этого репозитория. Иначе в корневом .env задайте IIPROXY_APP_DIR.
+  iiproxy-web:
+    build:
+      context: ${IIPROXY_APP_DIR:-.}
+      dockerfile: Dockerfile
+    image: iiproxy-web:local
+    container_name: iiproxy-web
+    restart: unless-stopped
+    env_file:
+      - ${IIPROXY_APP_DIR:-.}/.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/app.db
+      NEXT_PUBLIC_APP_URL: https://iiproxy.ru
+    volumes:
+      - iiproxy_database:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.iiproxy.rule=Host(`iiproxy.ru`) || Host(`www.iiproxy.ru`) || Host(`ii-proxy.ru`) || Host(`www.ii-proxy.ru`)"
+      - "traefik.http.routers.iiproxy.entrypoints=websecure"
+      - "traefik.http.routers.iiproxy.tls=true"
+      - "traefik.http.routers.iiproxy.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.iiproxy.loadbalancer.server.port=8000"
+    networks:
+      - web
+
+  # ================= WordPress =================
+  wordpress-db:
+    image: mysql:8
+    container_name: wordpress-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WORDPRESS_DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}
+      MYSQL_USER: ${WORDPRESS_DB_USER}
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+    ports:
+      - "3306:3306" # ???????????? ???? ?? ????-??????
+    volumes:
+      - wordpress-db-data:/var/lib/mysql
+    networks:
+      - web
+
+  wordpress-shop:
+    image: wordpress:latest
+    container_name: wordpress-shop
+    restart: unless-stopped
+    depends_on:
+      - wordpress-db
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db:3306
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+    volumes:
+      - ./shop:/var/www/html
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wordpress-shop.rule=Host(`shop.sergeymarkin.ru`) || Host(`www.shop.sergeymarkin.ru`)"
+      - "traefik.http.routers.wordpress-shop.entrypoints=websecure"
+      - "traefik.http.routers.wordpress-shop.tls=true"
+      - "traefik.http.routers.wordpress-shop.tls.certresolver=mytlschallenge"
+    networks:
+      - web
+
+  # ================= Portainer =================
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./portainer/data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.sergeymarkin.ru`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.tls.certresolver=mytlschallenge"
+    networks:
+      - web
+
+  # ================= n8n =================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    environment:
+      - N8N_HOST=n8n59305.hostkey.in
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://n8n59305.hostkey.in
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n59305.hostkey.in`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.routers.n8n.tls.certresolver=mytlschallenge"
+    volumes:
+      - ./n8n:/home/node/.n8n
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
+
+volumes:
+  wordpress-db-data:
+  sergeymarkin_database:
+    name: sergeymarkin_database
+  iiproxy_database:
+    name: iiproxy_database

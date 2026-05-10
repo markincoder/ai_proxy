@@ -14,7 +14,7 @@ usd_per_unit * 1e6 * OPENROUTER_USD_RUB * PRICING_MARKUP_MULT.
   python scripts/sync_openrouter_prices.py           # печать + обновить БД
   python scripts/sync_openrouter_prices.py --dry-run   # только печать
 
-После цен обновляет из каталога (`server/data/default_model_specs.json`) карточки моделей:
+После цен обновляет из каталога (`data/default_model_specs.json`) карточки моделей:
 display_name, provider, description_ru, pricing_note_ru (если ключ задан в сиде)
 для строк, которые уже есть в `ai_models`.
 

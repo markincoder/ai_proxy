@@ -81,6 +81,64 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 
 Войдите через **Яндекс ID** или **VK ID**, если в `.env` заданы соответствующие переменные OAuth.
 
+### Запуск в Docker на сервере
+
+На сервере нужны **Docker Engine** и **Docker Compose** (плагин `docker compose`).
+
+1. **Клонирование и `.env`**  
+   Клонируйте репозиторий и в **корне проекта** (рядом с `Dockerfile` и `requirements.txt`) создайте `.env` из примера и заполните как минимум `OPENROUTER_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_APP_URL` (публичный `https://…` без слэша в конце), ключи OAuth и при необходимости ЮKassa.  
+   Для OAuth в кабинетах провайдеров укажите redirect URI с **реальным** доменом, как в разделе «Вход через Яндекс ID и VK ID».
+
+2. **Данные**  
+   В контейнере приложение использует каталог **`/app/data`**: SQLite (`app.db`), при первом старте — копия **`default_model_specs.json`** из образа, загрузки новостей — **`uploads/news`**. В `docker-compose.yml` репозитория этот путь смонтирован как **именованный том** `iiproxy_database`, данные переживают пересборку образа.
+
+3. **Сборка и старт только сервиса II Proxy**  
+   Из **корня репозитория** (где лежит этот `docker-compose.yml`):
+
+   ```bash
+   docker compose build iiproxy-web
+   docker compose up -d iiproxy-web
+   ```
+
+   Файл `docker-compose.yml` в репозитории описывает и другие сервисы (Traefik, WordPress и т.д.). Команды выше поднимают **только** `iiproxy-web`. Убедитесь, что:
+   - создана **внешняя сеть** `web`, если её ещё нет:  
+     `docker network create web`;
+   - для сервисов вроде `sergeymarkin-web` пути к `.env` в compose не ломают запуск (или временно закомментируйте лишние сервисы на своей копии файла).
+
+   Если **общий compose** лежит в другом каталоге (например `~/docker`), а код II Proxy — в отдельном каталоге, в **`.env` рядом с compose** (или в окружении shell) задайте путь к корню репозитория:
+
+   ```bash
+   export IIPROXY_APP_DIR=/path/to/AI_proxy
+   docker compose -f /path/to/docker-compose.yml build iiproxy-web
+   docker compose -f /path/to/docker-compose.yml up -d iiproxy-web
+   ```
+
+   Тогда `build.context` и `env_file` возьмут `.env` из каталога с приложением.
+
+4. **TLS и домен**  
+   В репозитории для `iiproxy-web` заданы labels **Traefik** (маршрут по хостам `iiproxy.ru`, `www.iiproxy.ru`, `ii-proxy.ru`, `www.ii-proxy.ru`, HTTPS, ACME). Должен работать контейнер **Traefik** из того же compose и переменная **`EMAIL`** для Let’s Encrypt в окружении compose. Подставьте свои хосты в labels при необходимости.  
+   В секции `environment` сервиса **`NEXT_PUBLIC_APP_URL`** должен совпадать с основным публичным URL (сейчас в compose указан `https://iiproxy.ru`); иначе поправьте значение или уберите переопределение и задайте URL только в `.env`.
+
+5. **Обновление**  
+   После `git pull`:
+
+   ```bash
+   docker compose build iiproxy-web && docker compose up -d iiproxy-web
+   ```
+
+6. **Запуск без полного compose (только образ)**  
+   Из корня репозитория можно собрать образ и запустить контейнер вручную, пробросив том и переменные (пример для отладки; в продакшене удобнее Traefik):
+
+   ```bash
+   docker build -t iiproxy-web:local .
+   docker run -d --name iiproxy-web --restart unless-stopped \
+     -v iiproxy_database:/app/data \
+     --env-file .env \
+     -e DATABASE_URL=sqlite:////app/data/app.db \
+     -p 8000:8000 \
+     iiproxy-web:local
+   ```
+
 ### Администраторы
 
 Права админки (`/admin`, `/api/admin/*`) задаются полем **`users.is_admin`**: только **`0`** (нет) или **`1`** (админ). Войдите через OAuth, возьмите **`id`** из ответа `GET /api/auth/me` (или из таблицы `users`) и выполните:
@@ -109,7 +167,7 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 
 ## База данных
 
-По умолчанию используется **SQLite**. Файл создаётся при старте приложения (таблицы и начальный набор моделей в `ai_models` подставляются автоматически, если таблица пустая). Путь к файлу задаётся через `DATABASE_URL`; для относительного пути каталог разрешается относительно пакета `server`, обычно это `server/data/app.db`.
+По умолчанию используется **SQLite**. Файл создаётся при старте приложения (таблицы и начальный набор моделей в `ai_models` подставляются автоматически, если таблица пустая). Путь к файлу задаётся через `DATABASE_URL`; для относительного пути каталог разрешается относительно корня репозитория, обычно это `data/app.db`.
 
 Для продакшена можно указать PostgreSQL в `DATABASE_URL` в формате SQLAlchemy и при необходимости скорректировать модели/миграции под вашу среду.
 
@@ -139,4 +197,4 @@ python scripts/sync_openrouter_prices.py
 
 В каталоге и админке у каждой строки `ai_models` задаются флаги типа: **видео** (отдельный API `POST /videos`), **транскрипция** (`/audio/transcriptions`, в чате не выбирается), **речь в чате** (модели с аудиовыходом в completions), **музыка** (например Lyria). Чат и тарифы группируют карточки по этим признакам.
 
-**Видео (Veo, Sora, Seedance)** и прочие неактуальные идентификаторы: **записи в `ai_models`, которых нет в `server/data/default_model_specs.json`, при старте удаляются** (треды перепривязываются на `THREAD_MODEL_FALLBACK_SLUG`). Дополнительно через **`.env`** можно задать **`REMOVED_OPENROUTER_SLUGS`**, чтобы убрать slug без правки JSON. **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**. **Музыка:** **google/lyria-3-*** (на OpenRouter доступны как preview-идентификаторы). **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок в чате: **openai/gpt-5-image** / **gpt-5-image-mini**, **google/gemini-2.5-flash-image** и др.
+**Видео (Veo, Sora, Seedance)** и прочие неактуальные идентификаторы: **записи в `ai_models`, которых нет в `data/default_model_specs.json`, при старте удаляются** (треды перепривязываются на `THREAD_MODEL_FALLBACK_SLUG`). Дополнительно через **`.env`** можно задать **`REMOVED_OPENROUTER_SLUGS`**, чтобы убрать slug без правки JSON. **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**. **Музыка:** **google/lyria-3-*** (на OpenRouter доступны как preview-идентификаторы). **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок в чате: **openai/gpt-5-image** / **gpt-5-image-mini**, **google/gemini-2.5-flash-image** и др.

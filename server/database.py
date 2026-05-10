@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -10,13 +11,30 @@ from typing import Any
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from .config import get_settings
+from .config import REPO_ROOT, get_settings
 from . import models as _models  # noqa: F401 — регистрация таблиц в Base.metadata
 from .models import AiModel, Base, ChatThread, SiteBanner, User
 
-PACKAGE_DIR = Path(__file__).resolve().parent
-_DEFAULT_SPECS_PATH = PACKAGE_DIR / "data" / "default_model_specs.json"
+
+def _catalog_specs_path() -> Path:
+    return REPO_ROOT / "data" / "default_model_specs.json"
+
+
+# В образе Docker копируется в `.seed/`; при пустом томе `data/` файл подставляется при первом старте.
+_SEED_SPECS_PATH = REPO_ROOT / ".seed" / "default_model_specs.json"
 _specs_cache: list[dict[str, object]] | None = None
+
+
+def _ensure_default_model_specs_file() -> None:
+    path = _catalog_specs_path()
+    if path.is_file():
+        return
+    if not _SEED_SPECS_PATH.is_file():
+        raise FileNotFoundError(
+            f"Нет файла каталога: {path}. Восстановите JSON или создайте из бэкапа репозитория."
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(_SEED_SPECS_PATH, path)
 
 
 def _env_removed_slugs() -> frozenset[str]:
@@ -62,12 +80,12 @@ def _normalize_sqlite_url(url: str) -> str:
             raw = raw[1:]
         p = Path(raw)
         if not p.is_absolute():
-            p = (PACKAGE_DIR / raw).resolve()
+            p = (REPO_ROOT / raw).resolve()
         return f"sqlite:///{p.as_posix()}"
     rest = url.replace("sqlite:///", "", 1)
     p = Path(rest)
     if not p.is_absolute():
-        p = (PACKAGE_DIR / rest).resolve()
+        p = (REPO_ROOT / rest).resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{p.as_posix()}"
 
@@ -153,11 +171,9 @@ def get_default_model_specs() -> list[dict[str, object]]:
     global _specs_cache
     if _specs_cache is not None:
         return _specs_cache
-    if not _DEFAULT_SPECS_PATH.is_file():
-        raise FileNotFoundError(
-            f"Нет файла каталога: {_DEFAULT_SPECS_PATH}. Восстановите JSON или создайте из бэкапа репозитория."
-        )
-    data = json.loads(_DEFAULT_SPECS_PATH.read_text(encoding="utf-8"))
+    _ensure_default_model_specs_file()
+    path = _catalog_specs_path()
+    data = json.loads(path.read_text(encoding="utf-8"))
     _specs_cache = [_parse_spec_dict(x) for x in data]
     return _specs_cache
 

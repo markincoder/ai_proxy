@@ -1,5 +1,5 @@
 """
-Копирует из каталога `server/data/default_model_specs.json` в БД только поля карточки:
+Копирует из каталога `data/default_model_specs.json` в БД только поля карточки:
 display_name, provider, description_ru, pricing_note_ru для slug, уже присутствующих в `ai_models`.
 
 Без запросов к OpenRouter и без изменения цен. Полезно после правки текстов в JSON.

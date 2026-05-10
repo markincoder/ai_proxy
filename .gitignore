@@ -4,6 +4,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
-server/data/*.db
+data/*.db
 *.db
 data/uploads/
