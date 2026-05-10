@@ -86,50 +86,49 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 На сервере нужны **Docker Engine** и **Docker Compose** (плагин `docker compose`).
 
 1. **Клонирование и `.env`**  
-   Клонируйте репозиторий и в **корне проекта** (рядом с `Dockerfile` и `requirements.txt`) создайте `.env` из примера и заполните как минимум `OPENROUTER_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_APP_URL` (публичный `https://…` без слэша в конце), ключи OAuth и при необходимости ЮKassa.  
+   Типичная раскладка на сервере: рядом с `docker-compose.yml` — каталог **`iiproxy.ru`** с этим репозиторием (`Dockerfile`, `requirements.txt`, `server/`, …). Файл **`.env` создаётся в `iiproxy.ru/.env`** (не обязательно рядом с compose). Заполните как минимум `OPENROUTER_API_KEY`, `SESSION_SECRET`, `NEXT_PUBLIC_APP_URL` (публичный `https://…` без слэша в конце), ключи OAuth и при необходимости ЮKassa.  
    Для OAuth в кабинетах провайдеров укажите redirect URI с **реальным** доменом, как в разделе «Вход через Яндекс ID и VK ID».
 
 2. **Данные**  
-   В контейнере приложение использует каталог **`/app/data`**: SQLite (`app.db`), при первом старте — копия **`default_model_specs.json`** из образа, загрузки новостей — **`uploads/news`**. В `docker-compose.yml` репозитория этот путь смонтирован как **именованный том** `iiproxy_database`, данные переживают пересборку образа.
+   В контейнере приложение использует каталог **`/app/data`**: SQLite (`app.db`), при первом старте — копия **`default_model_specs.json`** из образа, загрузки новостей — **`uploads/news`**. В `docker-compose.yml` этот путь смонтирован как **именованный том** `iiproxy_database`, данные переживают пересборку образа.
 
 3. **Сборка и старт только сервиса II Proxy**  
-   Из **корня репозитория** (где лежит этот `docker-compose.yml`):
+   Команды выполняйте из **каталога, где лежит `docker-compose.yml`** (родительский каталог относительно `iiproxy.ru/`). По умолчанию compose ждёт проект в **`./iiproxy.ru`** — отдельно задавать путь не нужно.
 
    ```bash
    docker compose build iiproxy-web
    docker compose up -d iiproxy-web
    ```
 
-   Файл `docker-compose.yml` в репозитории описывает и другие сервисы (Traefik, WordPress и т.д.). Команды выше поднимают **только** `iiproxy-web`. Убедитесь, что:
+   Файл `docker-compose.yml` описывает и другие сервисы (Traefik, WordPress и т.д.). Команды выше поднимают **только** `iiproxy-web`. Убедитесь, что:
    - создана **внешняя сеть** `web`, если её ещё нет:  
      `docker network create web`;
    - для сервисов вроде `sergeymarkin-web` пути к `.env` в compose не ломают запуск (или временно закомментируйте лишние сервисы на своей копии файла).
 
-   Если **общий compose** лежит в другом каталоге (например `~/docker`), а код II Proxy — в отдельном каталоге, в **`.env` рядом с compose** (или в окружении shell) задайте путь к корню репозитория:
+   Если каталог с кодом называется иначе или лежит не `./iiproxy.ru`, в **`.env` рядом с compose** или в shell задайте **`IIPROXY_APP_DIR`** (путь к корню репозитория II Proxy):
 
    ```bash
-   export IIPROXY_APP_DIR=/path/to/AI_proxy
-   docker compose -f /path/to/docker-compose.yml build iiproxy-web
-   docker compose -f /path/to/docker-compose.yml up -d iiproxy-web
+   export IIPROXY_APP_DIR=./мой-каталог
+   docker compose build iiproxy-web
+   docker compose up -d iiproxy-web
    ```
-
-   Тогда `build.context` и `env_file` возьмут `.env` из каталога с приложением.
 
 4. **TLS и домен**  
    В репозитории для `iiproxy-web` заданы labels **Traefik** (маршрут по хостам `iiproxy.ru`, `www.iiproxy.ru`, `ii-proxy.ru`, `www.ii-proxy.ru`, HTTPS, ACME). Должен работать контейнер **Traefik** из того же compose и переменная **`EMAIL`** для Let’s Encrypt в окружении compose. Подставьте свои хосты в labels при необходимости.  
    В секции `environment` сервиса **`NEXT_PUBLIC_APP_URL`** должен совпадать с основным публичным URL (сейчас в compose указан `https://iiproxy.ru`); иначе поправьте значение или уберите переопределение и задайте URL только в `.env`.
 
 5. **Обновление**  
-   После `git pull`:
+   В каталоге **`iiproxy.ru`**: `git pull`. Затем из каталога с **`docker-compose.yml`**:
 
    ```bash
    docker compose build iiproxy-web && docker compose up -d iiproxy-web
    ```
 
 6. **Запуск без полного compose (только образ)**  
-   Из корня репозитория можно собрать образ и запустить контейнер вручную, пробросив том и переменные (пример для отладки; в продакшене удобнее Traefik):
+   Сборка из **корня репозитория** (`iiproxy.ru/` — там же `Dockerfile`):
 
    ```bash
+   cd iiproxy.ru
    docker build -t iiproxy-web:local .
    docker run -d --name iiproxy-web --restart unless-stopped \
      -v iiproxy_database:/app/data \

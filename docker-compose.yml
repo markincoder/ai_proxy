@@ -109,16 +109,16 @@ services:
       - web
 
   # ================= II Proxy (iiproxy) =================
-  # По умолчанию: compose в ~/docker, код и .env в корне этого репозитория. Иначе в корневом .env задайте IIPROXY_APP_DIR.
+  # По умолчанию: compose в ~/docker, проект в ~/docker/iiproxy.ru/ (Dockerfile и .env внутри). Иначе: IIPROXY_APP_DIR= в .env рядом с compose.
   iiproxy-web:
     build:
-      context: ${IIPROXY_APP_DIR:-.}
+      context: ${IIPROXY_APP_DIR:-./iiproxy.ru}
       dockerfile: Dockerfile
     image: iiproxy-web:local
     container_name: iiproxy-web
     restart: unless-stopped
     env_file:
-      - ${IIPROXY_APP_DIR:-.}/.env
+      - ${IIPROXY_APP_DIR:-./iiproxy.ru}/.env
     environment:
       DATABASE_URL: sqlite:////app/data/app.db
       NEXT_PUBLIC_APP_URL: https://iiproxy.ru

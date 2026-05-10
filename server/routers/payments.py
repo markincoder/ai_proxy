@@ -10,8 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import get_db, resolve_user_id
+from ..deps import get_db, resolve_user_id, user_public_identifier
 from ..models import PaymentOrder, Transaction, User
+from ..services.notify import schedule_payment_notification
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -75,6 +76,15 @@ def _try_credit_order_from_yookassa(
         )
     )
     db.commit()
+    label = user_public_identifier(user) if user else str(order.user_id)
+    amount_display = format(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+    schedule_payment_notification(
+        str(order.user_id),
+        label,
+        amount_display,
+        payment_id,
+        str(order.id),
+    )
     return True
 
 

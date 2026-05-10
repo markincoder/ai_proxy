@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..deps import blocked_user_detail, get_db, user_public_identifier
 from ..models import User
+from ..services.notify import schedule_new_user_notification
 
 router = APIRouter(prefix="/api/auth/oauth", tags=["auth"])
 
@@ -91,7 +92,7 @@ def _yandex_user_id(access_token: str) -> str:
     return str(raw_id)
 
 
-def _get_or_create_vk_user(db: Session, vk_numeric_id: str) -> User:
+def _get_or_create_vk_user(db: Session, vk_numeric_id: str) -> tuple[User, bool]:
     s = get_settings()
     user = db.query(User).filter(User.vk_user_id == vk_numeric_id).first()
     initial = Decimal(s.oauth_new_user_balance)
@@ -103,7 +104,8 @@ def _get_or_create_vk_user(db: Session, vk_numeric_id: str) -> User:
         db.add(user)
         db.commit()
         db.refresh(user)
-    return user
+        return user, True
+    return user, False
 
 
 class VkSdkSessionBody(BaseModel):
@@ -123,7 +125,14 @@ def vk_session_from_sdk_token(request: Request, body: VkSdkSessionBody, db: Sess
         uid = _vk_user_id_from_access_token(token)
     except (httpx.HTTPError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid or expired VK access token")
-    user = _get_or_create_vk_user(db, uid)
+    user, created = _get_or_create_vk_user(db, uid)
+    if created:
+        schedule_new_user_notification(
+            str(user.id),
+            user_public_identifier(user),
+            "VK",
+            str(user.balance),
+        )
     if user.is_blocked == 1:
         raise HTTPException(status_code=403, detail=blocked_user_detail(user))
     request.session["user_id"] = user.id
@@ -200,6 +209,12 @@ def yandex_oauth_callback(
         db.add(user)
         db.commit()
         db.refresh(user)
+        schedule_new_user_notification(
+            str(user.id),
+            user_public_identifier(user),
+            "Яндекс ID",
+            str(user.balance),
+        )
 
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
@@ -281,7 +296,14 @@ def vk_oauth_callback(
     except (httpx.HTTPError, KeyError, ValueError):
         return _login_redirect("vk_token")
 
-    user = _get_or_create_vk_user(db, vk_uid)
+    user, created = _get_or_create_vk_user(db, vk_uid)
+    if created:
+        schedule_new_user_notification(
+            str(user.id),
+            user_public_identifier(user),
+            "VK",
+            str(user.balance),
+        )
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
     request.session["user_id"] = user.id

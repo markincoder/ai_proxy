@@ -8,9 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import blocked_user_detail, get_db, require_user_id
+from ..deps import blocked_user_detail, get_db, require_user_id, user_public_identifier
 from ..models import AiModel, User
-from ..passwords import hash_password, verify_password
+from ..services.notify import schedule_new_user_notification
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -198,6 +198,12 @@ def register(request: Request, body: RegisterBody, db: Session = Depends(get_db)
         raise HTTPException(status_code=409, detail="Этот логин уже занят") from None
     db.refresh(user)
     request.session["user_id"] = user.id
+    schedule_new_user_notification(
+        str(user.id),
+        user_public_identifier(user),
+        "форма (логин и пароль)",
+        str(user.balance),
+    )
     return {"ok": True, "userId": user.id}
 
 

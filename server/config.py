@@ -73,6 +73,17 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NEWS_UPLOAD_DIR", "NEWS_IMAGE_UPLOAD_DIR"),
     )
 
+    mail_server: str = Field(default="", validation_alias="MAIL_SERVER")
+    mail_username: str = Field(default="", validation_alias="MAIL_USERNAME")
+    mail_password: str = Field(default="", validation_alias="MAIL_PASSWORD")
+    mail_to: str = Field(default="", validation_alias="MAIL_TO")
+    mail_from: str = Field(default="", validation_alias="MAIL_FROM")
+    mail_port: int = Field(default=587, validation_alias="MAIL_PORT")
+    mail_starttls_env: str = Field(default="true", validation_alias="MAIL_STARTTLS")
+
+    telegram_bot_token: str = Field(default="", validation_alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", validation_alias="TELEGRAM_CHAT_ID")
+
     @property
     def yookassa_enabled(self) -> bool:
         return _env_is_true(self.yookassa_env)
@@ -105,6 +116,11 @@ class Settings(BaseSettings):
     def news_upload_path(self) -> Path:
         p = Path(self.news_upload_dir)
         return p.resolve() if p.is_absolute() else (REPO_ROOT / p).resolve()
+
+    @property
+    def mail_starttls(self) -> bool:
+        """Для SMTP на порте != 465 (например 587 у Яндекса)."""
+        return _env_is_true(self.mail_starttls_env)
 
 
 def get_settings() -> Settings:
