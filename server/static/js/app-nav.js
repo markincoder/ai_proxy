@@ -112,6 +112,7 @@
     const navLogin = document.getElementById("nav-login");
     const btnLogout = document.getElementById("btn-logout");
     const navAdmin = document.getElementById("nav-admin");
+    const navSettings = document.getElementById("nav-settings");
 
     if (navLogin) {
       try {
@@ -132,11 +133,16 @@
       if (btnLogout) btnLogout.style.display = "none";
       if (balanceWrap) balanceWrap.style.display = "none";
       if (btnPay) btnPay.style.display = "none";
+      if (navSettings) navSettings.style.display = "none";
     } else {
       if (navLogin) navLogin.style.display = "none";
       if (btnLogout) btnLogout.style.removeProperty("display");
       if (balanceWrap) balanceWrap.style.removeProperty("display");
       if (balanceEl) balanceEl.textContent = formatBalance(me.balance);
+      if (balanceWrap && balanceEl) {
+        balanceWrap.title = `Баланс: ${balanceEl.textContent}`;
+      }
+      if (navSettings) navSettings.style.removeProperty("display");
     }
 
     if (me.isAdmin && navAdmin) navAdmin.style.removeProperty("display");

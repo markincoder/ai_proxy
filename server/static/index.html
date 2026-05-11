@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -8,7 +8,7 @@
     />
     <title>Чат — II Proxy</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/style.css?v=61" />
+    <link rel="stylesheet" href="/static/css/style.css?v=68" />
     <link
       rel="stylesheet"
       href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
@@ -18,7 +18,7 @@
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=6" defer></script>
+    <script src="/static/js/site-header.js?v=8" defer></script>
 
     <div class="app-layout">
       <div
@@ -71,6 +71,11 @@
             >
               <span aria-hidden="true">☰</span>
             </button>
+            <div
+              id="model-picker-search-mobile-host"
+              class="page-chat-search-mobile-host"
+              aria-hidden="true"
+            ></div>
             <h1 class="page-title">Чат с нейросетями</h1>
           </div>
 
@@ -132,10 +137,11 @@
             <p id="stt-mode-hint" class="hint footer-hint" style="display: none">
               Выбрана модель <strong>только распознавания речи</strong> (вкладка «Транскрипция»): запись с микрофона или аудиофайл попадает в чат как текст и оплачивается по тарифу. Для диалога с нейросетью переключитесь на модель из «Текст и чат» или другую диалоговую.
             </p>
+            <p id="multi-category-hint" class="hint footer-hint" style="display: none"></p>
             <p id="music-text-hint" class="hint footer-hint" style="display: none">
-              Эта модель в категории «Музыка» рассчитана на <strong>текст</strong> (лирика, структура трека, промпты).
-              Чтобы получить <strong>готовое аудио</strong>, выберите в той же вкладке модель <strong>Lyria</strong> (Google) —
-              в общей строке карточек она стоит <strong>слева, перед текстовыми</strong> вариантами.
+              У выбранной модели <strong>нет выхода готового аудио</strong> — только текст (лирика, структура трека, промпты).
+              Чтобы получить <strong>звук</strong>, в разделе «Музыка» выберите модель <strong>Lyria</strong> (Google) —
+              в строке карточек она обычно <strong>слева</strong> от текстовых вариантов.
             </p>
             <p id="video-mode-hint" class="hint footer-hint" style="display: none">
               Провайдер может отклонить и <strong>нейтральный</strong> запрос (политика контента, ложные срабатывания). Смените формулировку сцены или другую видео-модель.
@@ -235,8 +241,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
-    <script type="module" src="/static/js/chat.js?v=82"></script>
+    <script src="/static/js/app-nav.js?v=4" defer></script>
+    <script type="module" src="/static/js/chat.js?v=88"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

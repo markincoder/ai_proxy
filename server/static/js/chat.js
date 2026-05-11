@@ -324,22 +324,61 @@ function modelAllowsVoiceInput(m) {
   return true;
 }
 
-/** Группа модели для сетки: бесплатные > видео > изображения > речь в чате > транскрипция > музыка > текст */
-function modelGroupId(m) {
-  if (!m || typeof m !== "object") return "text";
-  if (m.isFree === true) return "free";
-  if (m.supportsVideoGeneration) return "video";
-  if (m.supportsImageGeneration) return "image";
-  if (m.supportsSpeech && m.supportsTranscription) return "speech";
-  if (m.supportsSpeech && m.supportsMusicGeneration) {
-    const s = String(m.slug || "");
-    if (s.includes("lyria")) return "music";
-    return "speech";
+/** Все вкладки, куда имеет смысл вывести модель (может быть несколько). */
+function modelGroupIds(m) {
+  if (!m || typeof m !== "object") return ["text"];
+  const out = [];
+  const seen = new Set();
+
+  /** @param {string} id */
+  function push(id) {
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
   }
-  if (m.supportsSpeech) return "speech";
-  if (m.supportsTranscription) return "transcription";
-  if (m.supportsMusicGeneration) return "music";
+
+  if (m.isFree === true) push("free");
+  if (m.supportsVideoGeneration === true) push("video");
+  if (m.supportsImageGeneration === true) push("image");
+  if (m.supportsSpeech === true) push("speech");
+  if (m.supportsTranscription === true) push("transcription");
+  if (m.supportsMusicGeneration === true) push("music");
+
+  /** Обычный текстовый чат (completions): не только STT без диалога. */
+  const textOk = m.supportsChat !== false && !isSttOnlyModel(m);
+  if (textOk) push("text");
+
+  if (out.length === 0) push("text");
+  return out;
+}
+
+/** Вкладка по умолчанию при выборе модели — прежний приоритет. */
+function primaryModelGroupId(m) {
+  const ids = modelGroupIds(m);
+  const order = ["free", "video", "image", "speech", "transcription", "music", "text"];
+  for (const id of order) {
+    if (ids.includes(id)) return id;
+  }
   return "text";
+}
+
+/** Несколько вкладок пикера (пересечение возможностей), кроме тривиального «Бесплатные» + «Текст и чат». */
+function modelAppearsInMultiplePickerTabs(m) {
+  const ids = modelGroupIds(m);
+  if (ids.length < 2) return false;
+  if (ids.length === 2 && ids.includes("free") && ids.includes("text")) return false;
+  return true;
+}
+
+function modelPickerTabTitlesJoined(m) {
+  const ids = modelGroupIds(m);
+  const titles = MODEL_GROUPS.filter((g) => ids.includes(g.id)).map((g) => g.title);
+  return titles.join(" · ");
+}
+
+/** @deprecated Совместимость: одна «главная» вкладка. */
+function modelGroupId(m) {
+  return primaryModelGroupId(m);
 }
 
 /** Готовое аудио в ответ (Lyria и модели с речью+музыкой в API). Не путать с «(музыка в чате)» у Claude/GPT — там только текст. */
@@ -353,11 +392,7 @@ function modelProducesChatAudio(m) {
 /** Во вкладке «Музыка» выбрана модель без выхода звука — только лирика/промпты. */
 function isTextOnlyMusicAssistModel(m) {
   if (!m || typeof m !== "object") return false;
-  return (
-    modelGroupId(m) === "music" &&
-    m.supportsMusicGeneration === true &&
-    !modelProducesChatAudio(m)
-  );
+  return m.supportsMusicGeneration === true && !modelProducesChatAudio(m);
 }
 
 const MODEL_GROUPS = [
@@ -369,6 +404,22 @@ const MODEL_GROUPS = [
   { id: "speech", emoji: "🎙️", title: "Речь в чате" },
   { id: "music", emoji: "🎵", title: "Музыка" },
 ];
+
+function modelPickerFilterHaystack(m) {
+  const slug = String(m.slug || "");
+  const slugWords = slug.replace(/[/\-_:]/g, " ");
+  const desc =
+    typeof m.descriptionRu === "string" && m.descriptionRu.trim()
+      ? m.descriptionRu.trim()
+      : `${m.provider}. Детали и цены — в разделе «Все модели».`;
+  const tabTitles = MODEL_GROUPS.filter((g) => modelGroupIds(m).includes(g.id))
+    .map((g) => g.title)
+    .join(" ");
+  return [m.displayName, slug, slugWords, m.provider, desc, tabTitles]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
 
 function hueFromSlug(slug) {
   let h = 0;
@@ -572,6 +623,7 @@ async function main() {
   const chatModels = models.filter((m) => m.supportsChat !== false);
 
   const balanceEl = document.getElementById("balance");
+  const balanceWrapEl = document.getElementById("balance-wrap");
   const modelPickerEl = document.getElementById("model-picker");
   const formEl = document.getElementById("chat-form");
   const inputEl = document.getElementById("msg-input");
@@ -813,6 +865,7 @@ async function main() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
     })} ₽`;
+    if (balanceWrapEl) balanceWrapEl.title = `Баланс: ${balanceEl.textContent}`;
   }
   try {
     const qp = new URLSearchParams(window.location.search);
@@ -904,7 +957,16 @@ async function main() {
     }, 400);
   }
 
-  let selectedSlug = chatModels[0]?.slug ?? "";
+  /** Первая в списке «Бесплатные» (сортировка как у вкладки): по displayName, ru. */
+  function firstFreeChatModelSlug(list) {
+    const freeModels = list.filter((x) => x.isFree === true);
+    freeModels.sort((a, b) =>
+      String(a.displayName || "").localeCompare(String(b.displayName || ""), "ru"),
+    );
+    return freeModels[0]?.slug ?? null;
+  }
+
+  let selectedSlug = firstFreeChatModelSlug(chatModels) ?? chatModels[0]?.slug ?? "";
   /** true: не открывать последний чат при старте — уважать ?model= или выбор с тарифов. */
   let honorExplicitModelChoice = false;
   /* Сначала ?model= (переход с /tariffs), иначе последний выбор из сессии. */
@@ -921,24 +983,31 @@ async function main() {
       history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : "") + u.hash);
       if (!isGuest) schedulePersistLastModel(qModel);
     } else {
+      let remembered = false;
+
       const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
-      let hasSavedSlug = false;
       if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
         selectedSlug = savedSlug;
-        hasSavedSlug = true;
+        remembered = true;
       }
-      if (isGuest && !hasSavedSlug) {
-        const freeSlug = chatModels.find((x) => x.slug === "openrouter/free")?.slug;
-        if (freeSlug) selectedSlug = freeSlug;
-      }
+
       if (
         !isGuest &&
         typeof me.lastModelSlug === "string" &&
         me.lastModelSlug.trim() &&
-        chatModels.some((x) => x.slug === me.lastModelSlug)
+        chatModels.some((x) => x.slug === me.lastModelSlug.trim())
       ) {
         selectedSlug = me.lastModelSlug.trim();
         sessionStorage.setItem(MODEL_STORAGE_KEY, selectedSlug);
+        remembered = true;
+      }
+
+      if (!remembered) {
+        const d = firstFreeChatModelSlug(chatModels);
+        if (d) {
+          selectedSlug = d;
+          sessionStorage.setItem(MODEL_STORAGE_KEY, d);
+        }
       }
       if (sessionStorage.getItem(MODEL_EXPLICIT_CHOICE_KEY) === "1") {
         honorExplicitModelChoice = true;
@@ -960,15 +1029,29 @@ async function main() {
       btn.setAttribute("aria-checked", on ? "true" : "false");
     });
     const sel = chatModels.find((x) => x.slug === slug);
-    if (sel) activateModelTab(modelGroupId(sel));
-    const cards = modelPickerEl.querySelectorAll(".model-card");
+    if (sel) activateModelTab(primaryModelGroupId(sel));
+
+    /** Видимая панель, иначе первая копия модели среди вкладок. */
     let picked = null;
-    for (const c of cards) {
-      if (c.dataset.modelId === slug) {
-        picked = c;
-        break;
+    if (slug) {
+      for (const c of modelPickerEl.querySelectorAll(".model-card")) {
+        if (c.dataset.modelId !== slug) continue;
+        const panel = c.closest(".model-tab-panel");
+        if (panel && !panel.hidden) {
+          picked = c;
+          break;
+        }
+      }
+      if (!picked) {
+        for (const c of modelPickerEl.querySelectorAll(".model-card")) {
+          if (c.dataset.modelId === slug) {
+            picked = c;
+            break;
+          }
+        }
       }
     }
+
     if (picked) {
       requestAnimationFrame(() => {
         try {
@@ -996,7 +1079,11 @@ async function main() {
   if (modelPickerEl) {
     const buckets = { free: [], text: [], image: [], video: [], transcription: [], speech: [], music: [] };
     for (const m of chatModels) {
-      buckets[modelGroupId(m)].push(m);
+      for (const gid of modelGroupIds(m)) {
+        if (Object.prototype.hasOwnProperty.call(buckets, gid)) {
+          buckets[gid].push(m);
+        }
+      }
     }
     for (const k of Object.keys(buckets)) {
       buckets[k].sort((a, b) =>
@@ -1019,7 +1106,7 @@ async function main() {
 
       const initialGid = (() => {
         const sm = chatModels.find((x) => x.slug === selectedSlug);
-        if (sm) return modelGroupId(sm);
+        if (sm) return primaryModelGroupId(sm);
         return groupsWithModels[0].id;
       })();
 
@@ -1103,6 +1190,7 @@ async function main() {
         body.appendChild(dc);
         btn.appendChild(iconWrap);
         btn.appendChild(body);
+        btn.dataset.filterText = modelPickerFilterHaystack(m);
         return btn;
       }
 
@@ -1130,6 +1218,12 @@ async function main() {
         panel.setAttribute("aria-labelledby", tabId);
         panel.hidden = !isInitial;
         panel.dataset.group = g.id;
+
+        const emptyHint = document.createElement("p");
+        emptyHint.className = "model-picker-panel-empty";
+        emptyHint.hidden = true;
+        emptyHint.textContent = "Нет моделей по запросу.";
+        panel.appendChild(emptyHint);
 
         if (g.id === "music") {
           const audioMs = list.filter((m) => modelProducesChatAudio(m));
@@ -1164,6 +1258,121 @@ async function main() {
       });
 
       modelPickerEl.innerHTML = "";
+
+      const searchToolbar = document.createElement("div");
+      searchToolbar.className = "model-picker-toolbar";
+
+      let searchBusy = false;
+      const searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.className = "model-picker-search";
+      searchInput.placeholder = "Поиск по названию, провайдеру или разделам…";
+      searchInput.setAttribute("aria-label", "Поиск моделей по каталогу чата");
+      searchInput.autocomplete = "off";
+      searchInput.spellcheck = false;
+
+      /** @returns {HTMLElement | null} */
+      function pickerPanelForGroup(gid) {
+        return panelWrap.querySelector(`.model-tab-panel[data-group="${gid}"]`);
+      }
+
+      function applyModelPickerSearch() {
+        if (searchBusy) return;
+        searchBusy = true;
+        try {
+          const raw = searchInput.value.trim().toLowerCase();
+          const tokens = raw.split(/\s+/).filter(Boolean);
+          const hasFilter = tokens.length > 0;
+
+          modelPickerEl.querySelectorAll(".model-card").forEach((card) => {
+            const hay = card.dataset.filterText || "";
+            const ok = !hasFilter || tokens.every((t) => hay.includes(t));
+            card.classList.toggle("model-card--filter-hidden", !ok);
+          });
+
+          let totalMatches = 0;
+          groupsWithModels.forEach((grp) => {
+            const panel = pickerPanelForGroup(grp.id);
+            if (!panel) return;
+            const n = panel.querySelectorAll(
+              ".model-card:not(.model-card--filter-hidden)",
+            ).length;
+            totalMatches += n;
+            const hint = panel.querySelector(":scope > .model-picker-panel-empty");
+            if (hint) hint.hidden = !(hasFilter && n === 0);
+          });
+
+          tabBar.querySelectorAll(".model-tab").forEach((tab) => {
+            const gid = tab.dataset.group;
+            if (!gid) return;
+            const panel = pickerPanelForGroup(gid);
+            if (!panel) return;
+            const n = panel.querySelectorAll(
+              ".model-card:not(.model-card--filter-hidden)",
+            ).length;
+            const hideTab = hasFilter && totalMatches > 0 && n === 0;
+            tab.classList.toggle("model-tab--filter-hidden", hideTab);
+          });
+
+          const activeTab = tabBar.querySelector(".model-tab--active");
+          if (
+            hasFilter &&
+            totalMatches > 0 &&
+            activeTab?.classList.contains("model-tab--filter-hidden")
+          ) {
+            const firstStay = tabBar.querySelector(".model-tab:not(.model-tab--filter-hidden)");
+            const fg = firstStay?.dataset.group;
+            if (fg) activateModelTab(fg);
+          }
+        } finally {
+          searchBusy = false;
+        }
+      }
+
+      searchInput.addEventListener("input", () => applyModelPickerSearch());
+      searchInput.addEventListener("search", () => applyModelPickerSearch());
+
+      searchToolbar.appendChild(searchInput);
+
+      const searchMobileMq = window.matchMedia("(max-width: 900px)");
+      const searchMobileHost =
+        typeof document !== "undefined"
+          ? document.getElementById("model-picker-search-mobile-host")
+          : null;
+
+      function syncPickerSearchDock() {
+        const mq = searchMobileMq;
+        const row = document.querySelector(".page-chat-title-row");
+        if (!searchMobileHost || !row) {
+          modelPickerEl.insertBefore(searchToolbar, modelPickerEl.firstChild);
+          return;
+        }
+
+        /** @see style.css — max-width: 900px (.chat-sidebar-toggle) */
+        const mobile = mq.matches;
+        searchInput.placeholder = mobile
+          ? "Поиск моделей…"
+          : "Поиск по названию, провайдеру или разделам…";
+        if (mobile) {
+          searchMobileHost.appendChild(searchToolbar);
+          searchToolbar.classList.add("model-picker-toolbar--title-row");
+          row.classList.add("page-chat-title-row--search-mobile");
+          searchMobileHost.setAttribute("aria-hidden", "false");
+        } else {
+          row.classList.remove("page-chat-title-row--search-mobile");
+          searchMobileHost.setAttribute("aria-hidden", "true");
+          modelPickerEl.insertBefore(searchToolbar, modelPickerEl.firstChild);
+          searchToolbar.classList.remove("model-picker-toolbar--title-row");
+        }
+      }
+
+      const mqListen =
+        typeof searchMobileMq.addEventListener === "function"
+          ? (fn) => searchMobileMq.addEventListener("change", fn)
+          : (fn) => searchMobileMq.addListener(fn);
+      mqListen(() => syncPickerSearchDock());
+
+      syncPickerSearchDock();
       modelPickerEl.appendChild(tabBar);
       modelPickerEl.appendChild(panelWrap);
 
@@ -1187,7 +1396,9 @@ async function main() {
       });
 
       tabBar.addEventListener("keydown", (e) => {
-        const tabs = [...tabBar.querySelectorAll(".model-tab")];
+        const tabs = [
+          ...tabBar.querySelectorAll(".model-tab:not(.model-tab--filter-hidden)"),
+        ];
         const ix = tabs.indexOf(document.activeElement);
         if (ix < 0) return;
         let next = ix;
@@ -1216,6 +1427,7 @@ async function main() {
 
   const imgGenHintEl = document.getElementById("img-gen-hint");
   const sttModeHintEl = document.getElementById("stt-mode-hint");
+  const multiCategoryHintEl = document.getElementById("multi-category-hint");
   const musicTextHintEl = document.getElementById("music-text-hint");
   const videoModeHintEl = document.getElementById("video-mode-hint");
   function updateHints() {
@@ -1230,6 +1442,15 @@ async function main() {
     }
     if (sttModeHintEl) {
       sttModeHintEl.style.display = !vid && isSttOnlyModel(m) ? "block" : "none";
+    }
+    if (multiCategoryHintEl) {
+      const showMulti = !vid && modelAppearsInMultiplePickerTabs(m);
+      multiCategoryHintEl.style.display = showMulti ? "block" : "none";
+      if (showMulti) {
+        const tabs = escapeHtml(modelPickerTabTitlesJoined(m));
+        multiCategoryHintEl.innerHTML =
+          `Эта модель относится к <strong>нескольким разделам</strong> пикера (${tabs}). То же название есть и в других подходящих вкладках — переключайте их над списком карточек.`;
+      }
     }
     if (musicTextHintEl) {
       musicTextHintEl.style.display =

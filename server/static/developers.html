@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Разработчикам — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=56" />
+    <link rel="stylesheet" href="/static/css/style.css?v=68" />
     <style>
       .dev-doc-page {
         padding-left: 0;
@@ -203,7 +203,7 @@
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=6" defer></script>
+    <script src="/static/js/site-header.js?v=8" defer></script>
 
     <main class="main-shell layout-wide dev-doc-page page-docs-main">
       <div class="dev-doc-layout">
@@ -239,10 +239,12 @@
           II Proxy принимает запросы на <strong>наш сервер</strong>, списывает стоимость с баланса вашего аккаунта и
           проксирует вызов к моделям через <strong>OpenAI-совместимый</strong> интерфейс (чат и эмбеддинги).
           Нужны <strong>ключ <code>iip_…</code></strong> и <strong>slug</strong> модели из нашего каталога
-          (например, <code>openai/gpt-4o</code>).
+          (например, <code>openai/gpt-5.4</code>).
         </p>
         <p class="docs-lead">
-          Актуальные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>.
+          Актуальные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>. В интерфейсе чата и на «Тарифах» одна
+          модель может повторяться в <strong>нескольких вкладках</strong>, если у неё несколько возможностей (например, чат
+          и картинки, или речь и музыкальное API).
         </p>
       </section>
 
@@ -353,7 +355,8 @@
             <strong>отображаемое имя</strong> на ваш вкус, <strong>базовый URL</strong> — строка из блока выше,
             <strong>API-ключ</strong> — <code>iip_…</code>. Затем <strong>добавьте модель</strong>:
             в <strong>model-id</strong> вставьте slug из <a href="/tariffs">«Тарифов»</a> (тот же id, что в
-            <code>GET /api/models</code>), в «отображаемое имя» — удобное название для списка в чате.
+            <code>GET /api/models</code>), в «отображаемое имя» — удобное название для списка в чате. 
+            Подойдет любая модель из раздела "Текст и чат" на странице "Тарифы", но рекомендуем использовать "сильную" модель, например "anthropic/claude-opus-4.7"  или "openai/gpt-5.5".
           </p>
           <p class="docs-lead">
             После сохранения внизу чата Kilo Code должен появиться выбранный провайдер и модель. Для дисциплины ответов
@@ -365,14 +368,14 @@
         <div class="dev-subsection" id="sec-vibe-cline">
           <h3>Cline</h3>
           <p class="docs-lead">
-            Установите Cline из маркетплейса. При первом запуске выберите вариант вроде
+            Установите в IDE расширение Cline из маркетплейса. При первом запуске выберите вариант вроде
             <strong>«Bring my own API key»</strong> / свой ключ.
           </p>
           <p class="docs-lead">
             <strong>API Provider:</strong> <strong>OpenAI Compatible</strong>. Укажите
             <strong>Base URL</strong> из блока выше, <strong>API Key</strong> — <code>iip_…</code>,
-            <strong>Model ID</strong> — slug модели целиком (например <code>openai/gpt-4o</code>), как в
-            <a href="/tariffs">«Тарифах»</a>. Правила проекта можно задать через интерфейс Cline (иконка весов в чате)
+            <strong>Model ID</strong> — slug модели целиком. Подойдет любая модель из раздела "Текст и чат" на странице "Тарифы", но рекомендуем использовать "сильную" модель, например "anthropic/claude-opus-4.7"  или "openai/gpt-5.5". 
+            Правила проекта можно задать через интерфейс Cline (иконка весов в чате)
             или файлы вроде <code>.clinerules</code> — см. документацию расширения.
           </p>
           <p class="docs-note">
@@ -759,6 +762,6 @@
         initDevTocSpy();
       })();
     </script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=4" defer></script>
   </body>
 </html>

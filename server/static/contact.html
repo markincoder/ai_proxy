@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,13 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Контакты — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=56" />
+    <link rel="stylesheet" href="/static/css/style.css?v=68" />
   </head>
   <body class="page-contact">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=6" defer></script>
+    <script src="/static/js/site-header.js?v=8" defer></script>
 
     <main class="main-shell layout-wide page-contact-main">
       <article class="contact-page" lang="ru">
@@ -22,16 +22,12 @@
           ·
           <span>Контакты</span>
         </p>
-        <h1 class="page-title">Контакты</h1>
-        <p class="contact-page__lead">
-          Написать — будем рады вашему обращению.
-        </p>
+        <h1 class="page-title">Контакты</h1>       
+        <p class="contact-page__channels-title">Напишите нам, мы будем рады вашему обращению:</p>
         <p>
-          Опишите ваш вопрос или проблему и обязательно укажите <strong>ID пользователя</strong> — его можно узнать
-          в разделе <a href="/settings">«Настройки»</a> (вверху страницы, под заголовком).
+          Опишите ваш вопрос или проблему.
         </p>
-        <p class="contact-page__channels-title">Напишите нам:</p>
-        <ul class="contact-page__channels">
+         <ul class="contact-page__channels">
           <li>
             <a href="mailto:iiproxy@yandex.ru">iiproxy@yandex.ru</a>
             — электронная почта
@@ -39,11 +35,15 @@
         </ul>
       </article>
 
-      <section class="support-section" aria-labelledby="support-form-title">
+      <section
+        id="support-create-section"
+        class="support-section"
+        aria-labelledby="support-form-title"
+      >
         <h2 class="page-title support-title" id="support-form-title"> Или написать в поддержку</h2>
         <p class="support-note">
           Если вы авторизованы, обращения и ответы сохраняются в личном кабинете. Для быстрых вопросов можно использовать
-          почту или Telegram выше.
+          почту выше.
         </p>
         <div id="support-auth-hint" class="login-local-msg login-local-msg--err" style="display: none"></div>
         <div id="support-msg" class="login-local-msg" style="display: none"></div>
@@ -68,7 +68,11 @@
         </form>
       </section>
 
-      <section class="support-section" aria-labelledby="support-list-title">
+      <section
+        id="support-inbox-section"
+        class="support-section"
+        aria-labelledby="support-list-title"
+      >
         <h2 class="page-title support-title" id="support-list-title">Мои обращения</h2>
         <p class="support-note">История обращений доступна после входа в аккаунт.</p>
         <div id="support-list-empty" class="support-empty">Обращений пока нет.</div>
@@ -93,7 +97,7 @@
     </main>
 
     <footer class="site-footer">II Proxy</footer>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
-    <script src="/static/js/support.js?v=1" defer></script>
+    <script src="/static/js/app-nav.js?v=4" defer></script>
+    <script src="/static/js/support.js?v=4" defer></script>
   </body>
 </html>

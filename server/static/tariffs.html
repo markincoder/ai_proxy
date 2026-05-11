@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,13 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=60" />
+    <link rel="stylesheet" href="/static/css/style.css?v=68" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=6" defer></script>
+    <script src="/static/js/site-header.js?v=8" defer></script>
 
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
@@ -54,21 +54,64 @@
         { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
       ];
 
-      function modelGroupId(m) {
-        if (m.supportsEmbeddings === true && m.supportsChat === false) return "embeddings";
-        if (m.isFree === true) return "free";
-        if (m.supportsVideoGeneration) return "video";
-        if (m.supportsImageGeneration) return "image";
-        if (m.supportsSpeech && m.supportsTranscription) return "speech";
-        if (m.supportsSpeech && m.supportsMusicGeneration) {
-          const s = String(m.slug || "");
-          if (s.includes("lyria")) return "music";
-          return "speech";
+      function isSttOnlyTariffModel(m) {
+        return (
+          m.supportsTranscription === true &&
+          m.supportsSpeech !== true &&
+          m.supportsMusicGeneration !== true &&
+          m.supportsImageGeneration !== true &&
+          m.supportsVideoGeneration !== true
+        );
+      }
+
+      function modelGroupIds(m) {
+        if (m.supportsEmbeddings === true && m.supportsChat === false) return ["embeddings"];
+        const seen = new Set();
+        const out = [];
+        /** @param {string} id */
+        function push(id) {
+          if (!seen.has(id)) {
+            seen.add(id);
+            out.push(id);
+          }
         }
-        if (m.supportsSpeech) return "speech";
-        if (m.supportsTranscription) return "transcription";
-        if (m.supportsMusicGeneration) return "music";
+        if (m.isFree === true) push("free");
+        if (m.supportsVideoGeneration === true) push("video");
+        if (m.supportsImageGeneration === true) push("image");
+        if (m.supportsSpeech === true) push("speech");
+        if (m.supportsTranscription === true) push("transcription");
+        if (m.supportsMusicGeneration === true) push("music");
+
+        const textOk = m.supportsChat !== false && !isSttOnlyTariffModel(m);
+        if (textOk) push("text");
+
+        if (out.length === 0) push("text");
+        return out;
+      }
+
+      function primaryModelTabId(m) {
+        const ids = modelGroupIds(m);
+        const order = [
+          "embeddings",
+          "free",
+          "video",
+          "image",
+          "speech",
+          "transcription",
+          "music",
+          "text",
+        ];
+        for (const id of order) {
+          if (ids.includes(id)) return id;
+        }
         return "text";
+      }
+
+      /** Для вкладки «Все»: перечень разделов, где есть модель. */
+      function categoryTitlesJoined(m) {
+        const ids = modelGroupIds(m);
+        const titles = MODEL_GROUPS.filter((x) => ids.includes(x.id)).map((x) => x.title);
+        return titles.length ? titles.join(" · ") : primaryModelTabId(m);
       }
 
       function modelProducesChatAudio(m) {
@@ -183,12 +226,6 @@
         return Number(x).toLocaleString("ru-RU", { maximumFractionDigits: 4 });
       }
 
-      function categoryTitleForModel(m) {
-        const gid = modelGroupId(m);
-        const g = MODEL_GROUPS.find((x) => x.id === gid);
-        return g ? g.title : gid;
-      }
-
       function modelCardHtml(m, showCategory) {
         const embedOnly = m.supportsEmbeddings === true && m.supportsChat === false;
         const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
@@ -199,7 +236,7 @@
           !m.capabilities?.imageGeneration &&
           !m.capabilities?.videoGeneration;
         const metaLine = showCategory
-          ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(categoryTitleForModel(m))}</span> · <code>${escape(m.slug)}</code>`
+          ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(categoryTitlesJoined(m))}</span> · <code>${escape(m.slug)}</code>`
           : `${escape(m.provider)} · <code>${escape(m.slug)}</code>`;
         const chatFooter = embedOnly
           ? `<p class="tariff-price-hint">Только эмбеддинги: <code>POST /api/v1/embeddings</code> или IDE с base URL …<code>/v1</code> и <code>POST /v1/embeddings</code>; ключ как для чата.</p>`
@@ -228,7 +265,7 @@
         art.className = "card tariff-card";
         const slug = m.slug != null ? String(m.slug) : "";
         const slugWords = slug.replace(/[/\-_:]/g, " ");
-        const ft = [m.displayName, slug, slugWords, m.provider, categoryTitleForModel(m)]
+        const ft = [m.displayName, slug, slugWords, m.provider, categoryTitlesJoined(m)]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -242,7 +279,9 @@
         .then((models) => {
           const buckets = { free: [], text: [], embeddings: [], image: [], video: [], transcription: [], speech: [], music: [] };
           for (const m of models) {
-            buckets[modelGroupId(m)].push(m);
+            for (const gid of modelGroupIds(m)) {
+              if (Object.prototype.hasOwnProperty.call(buckets, gid)) buckets[gid].push(m);
+            }
           }
           for (const k of Object.keys(buckets)) {
             buckets[k].sort((a, b) =>
@@ -424,6 +463,6 @@
             '<p class="err" style="display:block">Не удалось загрузить модели.</p>';
         });
     </script>
-    <script src="/static/js/app-nav.js?v=2" defer></script>
+    <script src="/static/js/app-nav.js?v=4" defer></script>
   </body>
 </html>

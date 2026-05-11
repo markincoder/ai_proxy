@@ -253,6 +253,51 @@ input[type="number"] {
   color: var(--muted);
 }
 
+.model-picker-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 0 0.65rem 0.45rem;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-picker-search {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.32rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--fg-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.model-picker-search::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.model-picker-search:hover {
+  background: #f1f5f9;
+  border-color: var(--border);
+}
+
+.model-picker-search:focus {
+  outline: none;
+  background: var(--surface);
+  border-color: #c7d2fe;
+  box-shadow: var(--shadow-sm);
+  color: var(--fg);
+}
+
+.model-picker-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .model-tabs {
   display: flex;
   flex-wrap: nowrap;
@@ -325,6 +370,21 @@ input[type="number"] {
 
 .model-tab-panel {
   outline: none;
+}
+
+.model-tab.model-tab--filter-hidden {
+  display: none !important;
+}
+
+.model-card.model-card--filter-hidden {
+  display: none !important;
+}
+
+.model-picker-panel-empty {
+  margin: 0;
+  padding: 0.4rem 0.95rem 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
 
 .model-scroll-row {
@@ -1472,6 +1532,42 @@ select.settings-select {
   min-width: 0;
 }
 
+/* Моб.: строка поиска моделей вместо заголовка (через chat.js + class на строке) */
+.page-chat-search-mobile-host {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .page-chat-title-row.page-chat-title-row--search-mobile .page-chat-search-mobile-host {
+    display: flex;
+  }
+
+  .page-chat-title-row.page-chat-title-row--search-mobile .page-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+.model-picker-toolbar.model-picker-toolbar--title-row {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  gap: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
 .chat-sidebar-toggle {
   display: none;
   flex-shrink: 0;
@@ -1794,6 +1890,40 @@ select.settings-select {
     max-height: none;
   }
 
+  /* Чат: компактнее карточки моделей (уже и короче подпись) */
+  .page-chat #model-picker .model-card {
+    width: min(12rem, 54vw);
+    max-width: min(12rem, 54vw);
+    padding: 0.4rem 0.5rem;
+    gap: 0.4rem;
+  }
+
+  .page-chat #model-picker .model-card-icon {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  .page-chat #model-picker .model-card-icon-img {
+    width: 1.65rem;
+    height: 1.65rem;
+  }
+
+  .page-chat #model-picker .model-card-avatar--sm {
+    width: 1.65rem;
+    height: 1.65rem;
+    font-size: 0.82rem;
+  }
+
+  .page-chat #model-picker .model-card-title-name {
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .page-chat #model-picker .model-card-free-badge {
+    font-size: 0.52rem;
+    padding: 0.06rem 0.22rem;
+  }
+
   /* Панель вне потока — основная колонка на всю ширину */
   .app-layout {
     flex-direction: column;
@@ -1802,31 +1932,61 @@ select.settings-select {
 }
 
 @media (max-width: 640px) {
+  /* Чуть меньше типографика на всём сайте (rem/em берут базу от html) */
+  html {
+    font-size: 93.75%;
+  }
+
+  /* Единая компактная шапка на всех страницах */
   .top-nav {
-    display: flex;
-    flex-wrap: wrap;
-    padding: max(0.35rem, env(safe-area-inset-top)) max(0.65rem, env(safe-area-inset-right))
-      0.35rem max(0.65rem, env(safe-area-inset-left));
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 0.35rem;
+    row-gap: 0.18rem;
+    padding: max(0.18rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) 0.18rem
+      max(0.5rem, env(safe-area-inset-left));
   }
 
   .top-nav .brand {
-    grid-column: unset;
-    justify-self: unset;
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    font-size: 0.88rem;
+    gap: 0.28rem;
+    justify-self: start;
+  }
+
+  .top-nav .brand-mark {
+    width: 1.45rem;
+    height: 1.45rem;
+    font-size: 0.72rem;
+    border-radius: 0.38rem;
+  }
+
+  .nav-actions {
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: 0;
+    justify-self: end;
+    flex-wrap: nowrap;
+    gap: 0.28rem;
+    min-width: 0;
   }
 
   .nav-links {
-    grid-column: unset;
-    justify-self: unset;
-    order: 3;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: 0;
     width: 100%;
     justify-content: flex-start;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    gap: 0.2rem;
-    padding-bottom: 0.15rem;
+    gap: 0.14rem;
+    padding-bottom: 0.06rem;
   }
 
   .nav-links::-webkit-scrollbar {
@@ -1834,31 +1994,44 @@ select.settings-select {
   }
 
   .nav-link {
-    padding: 0.5rem 0.75rem;
-    min-height: 2.75rem;
+    min-height: 2.05rem;
+    padding: 0.22rem 0.52rem;
+    font-size: 0.74rem;
     align-items: center;
     flex-shrink: 0;
-  }
-
-  .nav-actions {
-    grid-column: unset;
-    justify-self: unset;
-    margin-left: auto;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.4rem;
   }
 
   .nav-actions .btn,
   .nav-actions .btn-primary,
   .nav-actions .btn-accent {
-    min-height: 2.75rem;
-    padding-inline: 0.85rem;
+    min-height: 2.05rem;
+    padding: 0.24rem 0.52rem;
+    font-size: 0.74rem;
   }
 
   .balance-pill {
-    font-size: 0.8125rem;
-    padding: 0.4rem 0.65rem;
+    flex-shrink: 1;
+    min-width: 0;
+    padding: 0.24rem 0.45rem;
+    font-size: 0.72rem;
+  }
+
+  /* Моб.: только сумма в «пилюле» */
+  .balance-pill-pref {
+    display: none !important;
+  }
+
+  .balance-pill strong {
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 28vw;
+    vertical-align: bottom;
+  }
+
+  body.page-chat .model-tabs {
+    padding-bottom: 0.32rem;
   }
 
   /* iOS: поля < 16px дают авто-зум при фокусе */
@@ -1870,9 +2043,10 @@ select.settings-select {
   input[type="search"],
   textarea,
   select {
-    font-size: 1rem;
+    font-size: max(16px, 1rem);
   }
 
+  /* Достаточно общего минимального размера полей (#msg-input отдельно не режем) */
   .main-shell {
     padding-left: max(0.75rem, env(safe-area-inset-left));
     padding-right: max(0.75rem, env(safe-area-inset-right));
@@ -1900,6 +2074,12 @@ select.settings-select {
     font-size: 0.875rem;
   }
 
+  .model-picker-search {
+    min-height: 2.6rem;
+    padding-inline: 0.9rem;
+    font-size: 0.875rem;
+  }
+
   .model-card {
     align-items: center;
     min-height: 2.85rem;
@@ -1923,9 +2103,17 @@ select.settings-select {
     gap: 0.25rem;
   }
 
-  .model-card-title-name {
+  .page-chat #model-picker .model-card-title-name {
     flex: 1;
     max-width: 100%;
+    font-size: 0.72rem;
+  }
+
+  .page-chat #model-picker .model-card {
+    width: min(10.5rem, 50vw);
+    max-width: min(10.5rem, 50vw);
+    min-height: 2.65rem;
+    padding: 0.35rem 0.45rem;
   }
 
   .settings-tabs {
@@ -1942,13 +2130,42 @@ select.settings-select {
   }
 
   .page-chat .main-shell--chat {
+    padding-top: 0.22rem;
     padding-left: max(0.45rem, env(safe-area-inset-left));
     padding-right: max(0.45rem, env(safe-area-inset-right));
   }
 
+  body.page-chat .page-chat-title-row {
+    margin-bottom: 0.18rem;
+  }
+
+  body.page-chat .model-picker {
+    padding: 0.32rem 0 0.4rem;
+  }
+
+  body.page-chat .model-picker-toolbar {
+    padding-bottom: 0.32rem;
+  }
+
+  body.page-chat .model-tabs {
+    padding-bottom: 0.32rem;
+  }
+
   .page-chat .chat-area {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
     padding-left: 0.65rem;
     padding-right: 0.65rem;
+  }
+
+  .page-chat .bubble {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    padding: 0.5rem 0.82rem;
+  }
+
+  .page-chat .msg {
+    margin-bottom: 0.72rem;
   }
 
   .page-chat .composer {
@@ -1970,11 +2187,20 @@ select.settings-select {
   .page-chat .composer .btn {
     flex: 1 1 0;
     min-width: 0;
-    min-height: 2.75rem;
+    min-height: 2.42rem;
   }
 
   .page-chat .composer .btn-mic {
-    flex: 0 0 2.75rem;
+    flex: 0 0 2.42rem;
+    min-height: 2.42rem;
+  }
+
+  .page-chat .composer button.btn-primary[type="submit"] {
+    flex: 0 1 auto;
+    min-height: 2.32rem;
+    padding: 0.34rem 0.58rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
   }
 
   .video-panel .input-row {

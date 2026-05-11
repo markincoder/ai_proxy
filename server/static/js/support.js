@@ -192,14 +192,8 @@
   }
 
   async function loadTickets() {
+    if (state.isGuest) return;
     const empty = $("support-list-empty");
-    if (state.isGuest) {
-      if (empty) {
-        empty.style.display = "block";
-        empty.textContent = "Войдите в аккаунт, чтобы видеть историю обращений.";
-      }
-      return;
-    }
     try {
       const r = await api("/api/support/tickets");
       if (!r.ok) throw new Error("tickets");
@@ -227,6 +221,7 @@
   }
 
   async function openTicket(id) {
+    if (state.isGuest) return;
     const panel = $("support-thread");
     if (!panel) return;
     panel.hidden = false;
@@ -260,10 +255,7 @@
     $("support-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       clearMsg();
-      if (state.isGuest) {
-        showMsg("Войдите в аккаунт, чтобы отправлять обращения.", true);
-        return;
-      }
+      if (state.isGuest) return;
       const subject = $("support-subject").value.trim();
       const message = $("support-message").value.trim();
       const captchaAnswer = $("support-captcha-answer").value.trim();
@@ -306,6 +298,7 @@
     $("support-reply-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       clearMsg();
+      if (state.isGuest) return;
       if (!state.activeTicketId) {
         showMsg("Выберите обращение для ответа.", true);
         return;
@@ -338,20 +331,23 @@
   async function boot() {
     const me = await loadMe();
     state.isGuest = me.guest === true;
+    const createSection = $("support-create-section");
+    const inboxSection = $("support-inbox-section");
+    const threadPanel = $("support-thread");
+    showAuthHint("");
     if (state.isGuest) {
-      showAuthHint("Войдите в аккаунт, чтобы отправлять обращения и видеть ответы.");
-      const form = $("support-form");
-      form?.querySelectorAll("input, textarea, button").forEach((el) => {
-        el.disabled = true;
-      });
-      const replyForm = $("support-reply-form");
-      replyForm?.querySelectorAll("textarea, button").forEach((el) => {
-        el.disabled = true;
-      });
+      if (createSection) createSection.hidden = true;
+      if (inboxSection) inboxSection.hidden = true;
+      if (threadPanel) {
+        threadPanel.hidden = true;
+        state.activeTicketId = null;
+      }
     } else {
-      showAuthHint("");
+      if (createSection) createSection.hidden = false;
+      if (inboxSection) inboxSection.hidden = false;
+      if (threadPanel && !state.activeTicketId) threadPanel.hidden = true;
+      await refreshCaptcha();
     }
-    await refreshCaptcha();
     await loadTickets();
     await refreshUnreadBadge();
   }

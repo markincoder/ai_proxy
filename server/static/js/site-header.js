@@ -7,7 +7,7 @@
     { href: "/news", label: "Новости" },
     { href: "/", label: "Чат" },
     { href: "/tariffs", label: "Тарифы" },
-    { href: "/settings", label: "Настройки", id: "nav-settings" },
+    { href: "/settings", label: "Настройки", id: "nav-settings", loggedInOnly: true },
     { href: "/contact", label: "Контакты", id: "nav-contact" },
     { href: "/developers", label: "Разработчикам" },
     { href: "/admin", label: "Админка", id: "nav-admin", adminOnly: true },
@@ -32,7 +32,8 @@
     const linksHtml = LINKS.map((item) => {
       const active = isNavActive(item.href, path) ? " active" : "";
       const idAttr = item.id ? ` id="${item.id}"` : "";
-      const styleAttr = item.adminOnly ? ` style="display: none"` : "";
+      const styleAttr =
+        item.adminOnly || item.loggedInOnly ? ` style="display: none"` : "";
       return `<a href="${item.href}" class="nav-link${active}"${idAttr}${styleAttr}>${item.label}</a>`;
     }).join("");
 
@@ -44,7 +45,7 @@
       <nav class="nav-links">${linksHtml}</nav>
       <div class="nav-actions">
         <span class="balance-pill" id="balance-wrap"
-          >Баланс <strong id="balance">—</strong></span
+          ><span class="balance-pill-pref" aria-hidden="true">Баланс&nbsp;</span><strong id="balance">—</strong></span
         >
         <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
         <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
