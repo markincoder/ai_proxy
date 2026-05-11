@@ -203,7 +203,7 @@
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=5" defer></script>
+    <script src="/static/js/site-header.js?v=6" defer></script>
 
     <main class="main-shell layout-wide dev-doc-page page-docs-main">
       <div class="dev-doc-layout">
@@ -236,13 +236,7 @@
           (например, <code>openai/gpt-4o</code>).
         </p>
         <p class="docs-lead">
-          Каталог для сайта и API — одна и та же таблица цен в базе: всё, что отдаётся в
-          <a href="/tariffs">«Тарифы»</a> и поля <code>inputPricePerMn</code> в <code>GET /api/models</code>, совпадает
-          между собой. Актуальные списки и цены см. на <a href="/tariffs">«Тарифах»</a> после смены данных в админке или скриптом синхронизации.
-        </p>
-        <p class="docs-lead">
-          Интерфейс: <a href="/tariffs">«Тарифы»</a> — описания и группы, <a href="/">чат</a> после входа —
-          проверка моделей вручную.
+          Актульные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>.
         </p>
       </section>
 
@@ -296,8 +290,7 @@
         <p class="docs-lead"><strong>Авторизация</strong>:</p>
         <pre class="docs-pre">Authorization: Bearer &lt;iip_…&gt;</pre>
         <p class="docs-note">
-          Ключ — в <a href="#sec-keys">разделе «Ключи доступа»</a>. Для <code>curl</code> и скриптов cookie сессии не
-          подходят.</p>
+          Ключ — в <a href="#sec-keys">разделе «Ключи доступа»</a>. </p>
 
         <p class="docs-lead">
           Каталог моделей для запросов: <code>GET …/api/models</code>. Удобнее смотреть названия и цены в ₽ за
@@ -321,10 +314,6 @@
 
         <div class="dev-subsection" id="sec-examples-python">
           <h3>Python</h3>
-          <p class="docs-lead">
-            Поток по SSE через <code>requests</code> к <code>POST …/api/v1/messages</code>. При
-            <code>"stream": false</code> после <code>raise_for_status()</code> можно вывести <code>r.json()</code>.
-          </p>
           <pre class="docs-pre" id="docs-python-example">Загрузка…</pre>
         </div>
 
@@ -351,11 +340,6 @@
         </p>
 
         <p class="docs-lead">
-          Поле <code>"model"</code> — <strong>slug из каталога</strong>. При необходимости задайте в теле запроса
-          <code>temperature</code> и <code>max_tokens</code> — они передаются провайдеру (как в обычном OpenAI API).
-        </p>
-
-        <p class="docs-lead">
           Список моделей для чата и цены в ₽ за 1&nbsp;млн токенов — на странице <a href="/tariffs">«Тарифы»</a> и в выпадающем списке
           модели на <a href="/">главной</a> после входа. Для машиночитаемого каталога: <code>GET /api/models</code>.
         </p>
@@ -364,8 +348,7 @@
       <section class="docs-section" id="sec-embeddings">
         <h2>Embeddings</h2>
         <p class="docs-lead">
-          Эмбеддинги — для поиска по смыслу, RAG и т.&nbsp;п. Пример ниже со <strong>полным URL</strong> к нашему API
-          (ничего заранее в клиенте задавать не нужно). Тело: <code>model</code> (slug модели с поддержкой эмбеддингов) и
+          Эмбеддинги — для поиска по смыслу, RAG и т.&nbsp;п. Пример ниже со <strong>полным URL</strong> к нашему API. Тело: <code>model</code> (slug модели с поддержкой эмбеддингов) и
           <code>input</code> — одна строка или массив строк. Названия моделей и цены — на <a href="/tariffs">«Тарифах»</a>;
           тот же каталог в JSON — <code>GET /api/models</code>.
         </p>
@@ -398,9 +381,6 @@
         <pre class="docs-pre" id="docs-image-python-example">Загрузка…</pre>
         <p class="docs-note">Поток: <code>curl -N</code> или цикл по строкам, как в примере с потоком в разделе «Примеры».</p>
 
-        <p class="docs-lead">
-          Связка маршрутов в коде приложения описана также в Swagger: <code>/swagger</code> после запуска сервера.
-        </p>
       </section>
         </div>
       </div>
