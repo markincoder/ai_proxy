@@ -109,6 +109,28 @@ services:
       - web
 
   # ================= II Proxy (iiproxy) =================
+  # Traefik заводится на nginx (edge): он проксирует в FastAPI и отдаёт HTML-заглушку при 502–504 и недоступном контейнере приложения (errors middleware этого не делает при connection refused).
+  iiproxy-edge:
+    image: nginx:alpine
+    container_name: iiproxy-edge
+    restart: unless-stopped
+    volumes:
+      - ${IIPROXY_APP_DIR:-./iiproxy.ru}/nginx/iiproxy-edge.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${IIPROXY_APP_DIR:-./iiproxy.ru}/nginx/maintenance-html:/usr/share/nginx/maintenance:ro
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.iiproxy.rule=Host(`iiproxy.ru`) || Host(`www.iiproxy.ru`) || Host(`ii-proxy.ru`) || Host(`www.ii-proxy.ru`)"
+      - "traefik.http.routers.iiproxy.entrypoints=websecure"
+      - "traefik.http.routers.iiproxy.tls=true"
+      - "traefik.http.routers.iiproxy.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.iiproxy.tls.domains[0].main=iiproxy.ru"
+      - "traefik.http.routers.iiproxy.tls.domains[0].sans=www.iiproxy.ru,ii-proxy.ru,www.ii-proxy.ru"
+      - "traefik.http.routers.iiproxy.service=iiproxy-public"
+      - "traefik.http.services.iiproxy-public.loadbalancer.server.port=80"
+
   # По умолчанию: compose в ~/docker, проект в ~/docker/iiproxy.ru/ (Dockerfile и .env внутри). Иначе: IIPROXY_APP_DIR= в .env рядом с compose.
   iiproxy-web:
     build:
@@ -125,16 +147,6 @@ services:
       NEXT_PUBLIC_APP_URL: https://iiproxy.ru
     volumes:
       - iiproxy_database:/app/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.iiproxy.rule=Host(`iiproxy.ru`) || Host(`www.iiproxy.ru`) || Host(`ii-proxy.ru`) || Host(`www.ii-proxy.ru`)"
-      - "traefik.http.routers.iiproxy.entrypoints=websecure"
-      - "traefik.http.routers.iiproxy.tls=true"
-      - "traefik.http.routers.iiproxy.tls.certresolver=mytlschallenge"
-      # Явный запрос одного сертификата со всеми SAN (если LE не подхватывает все имена из Rule)
-      - "traefik.http.routers.iiproxy.tls.domains[0].main=iiproxy.ru"
-      - "traefik.http.routers.iiproxy.tls.domains[0].sans=www.iiproxy.ru,ii-proxy.ru,www.ii-proxy.ru"
-      - "traefik.http.services.iiproxy.loadbalancer.server.port=8000"
     networks:
       - web
 

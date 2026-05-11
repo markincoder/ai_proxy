@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import get_settings
 from .database import init_db
 from .error_logging import install_exception_logging
+from .static_cache import HTML_PAGE_CACHE_CONTROL, StaticCacheHeadersMiddleware
 from .routers import admin as admin_router
 from .routers import (
     auth,
@@ -28,6 +29,11 @@ from .routers import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def _html(path: Path) -> FileResponse:
+    """Страницы HTML: короткий кэш + SWR при перезагрузке без лишней нагрузки на сервер."""
+    return FileResponse(path, headers={"Cache-Control": HTML_PAGE_CACHE_CONTROL})
 
 
 @asynccontextmanager
@@ -52,6 +58,7 @@ def create_app() -> FastAPI:
         same_site="lax",
         https_only=False,
     )
+    app.add_middleware(StaticCacheHeadersMiddleware)
 
     app.include_router(auth.router)
     app.include_router(oauth.router)
@@ -89,7 +96,7 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(STATIC_DIR / "index.html")
+        return _html(STATIC_DIR / "index.html")
 
     @app.get("/login")
     def login_page():
@@ -106,11 +113,11 @@ def create_app() -> FastAPI:
 
     @app.get("/tariffs")
     def tariffs_page():
-        return FileResponse(STATIC_DIR / "tariffs.html")
+        return _html(STATIC_DIR / "tariffs.html")
 
     @app.get("/news")
     def news_page():
-        return FileResponse(STATIC_DIR / "news.html")
+        return _html(STATIC_DIR / "news.html")
 
     @app.get("/docs")
     def docs_deprecated_redirect():
@@ -119,19 +126,19 @@ def create_app() -> FastAPI:
 
     @app.get("/developers")
     def developers_hub_page():
-        return FileResponse(STATIC_DIR / "developers.html")
+        return _html(STATIC_DIR / "developers.html")
 
     @app.get("/terms")
     def terms_page():
-        return FileResponse(STATIC_DIR / "terms.html")
+        return _html(STATIC_DIR / "terms.html")
 
     @app.get("/contact")
     def contact_page():
-        return FileResponse(STATIC_DIR / "contact.html")
+        return _html(STATIC_DIR / "contact.html")
 
     @app.get("/settings")
     def settings_page():
-        return FileResponse(STATIC_DIR / "settings.html")
+        return _html(STATIC_DIR / "settings.html")
 
     @app.get("/account")
     def account_redirect():
@@ -144,7 +151,7 @@ def create_app() -> FastAPI:
 
     @app.get("/admin")
     def admin_page():
-        return FileResponse(STATIC_DIR / "admin.html")
+        return _html(STATIC_DIR / "admin.html")
 
     install_exception_logging(app)
     return app

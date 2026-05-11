@@ -114,6 +114,7 @@ _db_url = (
 _url_obj = make_url(_db_url)
 _is_sqlite = _url_obj.drivername == "sqlite"
 _is_mysql = _url_obj.drivername.startswith("mysql")
+_is_postgresql = _url_obj.drivername.startswith("postgresql")
 
 _connect_args: dict[str, object] = {}
 _engine_kwargs: dict[str, object] = {}
@@ -122,6 +123,14 @@ if _is_sqlite:
 elif _is_mysql:
     _connect_args = {"charset": "utf8mb4"}
     _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+    _engine_kwargs["pool_recycle"] = 3600
+elif _is_postgresql:
+    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+    _engine_kwargs["pool_recycle"] = 1800
 
 engine = create_engine(
     _db_url,

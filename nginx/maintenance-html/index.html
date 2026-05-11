@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>Временная недоступность — II Proxy</title>
+    <style>
+      :root {
+        --accent: #4f46e5;
+        --accent-soft: rgba(79, 70, 229, 0.12);
+        --fg: #0f172a;
+        --muted: #64748b;
+        --surface: rgba(255, 255, 255, 0.92);
+        --border: #e2e8f0;
+        --radius: 1rem;
+        --shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+        color: var(--fg);
+        background: linear-gradient(165deg, #eef2ff 0%, #f4f6fb 38%, #f8fafc 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        padding-top: max(1.5rem, env(safe-area-inset-top));
+        padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+      }
+      .card {
+        max-width: 28rem;
+        width: 100%;
+        padding: 2rem 1.75rem;
+        border-radius: var(--radius);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+        text-align: center;
+      }
+      .glyph {
+        width: 3.25rem;
+        height: 3.25rem;
+        margin: 0 auto 1.25rem;
+        border-radius: 0.9rem;
+        background: linear-gradient(135deg, var(--accent-soft), #fff);
+        border: 1px solid var(--border);
+        display: grid;
+        place-items: center;
+        font-size: 1.5rem;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.25;
+      }
+      p {
+        margin: 0;
+        font-size: 0.975rem;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+      .brand {
+        margin-top: 1.5rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .hint {
+        margin-top: 1rem;
+        font-size: 0.8125rem;
+        opacity: 0.9;
+      }
+      .card a {
+        color: var(--accent);
+        text-underline-offset: 0.18em;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="card" aria-labelledby="maint-title">
+      <div class="glyph" aria-hidden="true">🛠</div>
+      <h1 id="maint-title">Сайт временно недоступен</h1>
+      <p>
+        Проводим технические работы или восстанавливаем сервис. Уже занимаемся этим —
+        загляните через несколько минут.
+      </p>
+      <p class="hint">
+        Срочно написать:
+        <a href="mailto:iiproxy@yandex.ru"><strong>iiproxy@yandex.ru</strong></a>.
+        Обновите страницу через пару минут.
+      </p>
+      <div class="brand">II Proxy</div>
+    </article>
+  </body>
+</html>
