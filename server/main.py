@@ -11,7 +11,21 @@ from .config import get_settings
 from .database import init_db
 from .error_logging import install_exception_logging
 from .routers import admin as admin_router
-from .routers import auth, chat, conversations, developer, meta, models_list, newsfeed, oauth, openai_compat, payments, support, video_jobs
+from .routers import (
+    auth,
+    chat,
+    conversations,
+    developer,
+    embeddings,
+    meta,
+    models_list,
+    newsfeed,
+    oauth,
+    openai_compat,
+    payments,
+    support,
+    video_jobs,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -23,7 +37,7 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
-    # /docs отдаём как страницу документации для разработчиков; Swagger — на /swagger
+    # Документация разработчиков — /developers; Swagger — /swagger (/docs как редирект).
     app = FastAPI(
         title="II Proxy",
         lifespan=lifespan,
@@ -42,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(oauth.router)
     app.include_router(chat.router)
+    app.include_router(embeddings.router)
     app.include_router(openai_compat.router)
     app.include_router(conversations.router)
     app.include_router(models_list.router)
@@ -98,8 +113,13 @@ def create_app() -> FastAPI:
         return FileResponse(STATIC_DIR / "news.html")
 
     @app.get("/docs")
-    def developer_docs_page():
-        return FileResponse(STATIC_DIR / "docs.html")
+    def docs_deprecated_redirect():
+        """Раньше отдавалась отдельная HTML-страница; содержание перенесено на /developers."""
+        return RedirectResponse(url="/developers", status_code=307)
+
+    @app.get("/developers")
+    def developers_hub_page():
+        return FileResponse(STATIC_DIR / "developers.html")
 
     @app.get("/terms")
     def terms_page():

@@ -70,6 +70,9 @@ class AiModel(Base):
     # Распознавание речи (endpoint /audio/transcriptions в OpenRouter), не chat completions.
     supports_transcription: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_coding: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Эмбеддинги OpenRouter (/embeddings): отдельные slug; может не участвовать в чате.
+    supports_embeddings: Mapped[bool] = mapped_column(Boolean, default=False)
+    supports_chat: Mapped[bool] = mapped_column(Boolean, default=True)
     # Тариф OpenRouter :free — показываем в категории «Бесплатные», цены в БД 0.
     is_free: Mapped[bool] = mapped_column(Boolean, default=False)
     # Краткое описание для карточки выбора модели (русский текст).

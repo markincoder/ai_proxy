@@ -7,9 +7,12 @@
     { href: "/news", label: "Новости" },
     { href: "/", label: "Чат" },
     { href: "/tariffs", label: "Тарифы" },
+    {
+      href: "/developers",
+      label: "Разработчикам",
+    },
     { href: "/settings", label: "Настройки", id: "nav-settings" },
     { href: "/admin", label: "Админка", id: "nav-admin", adminOnly: true },
-    { href: "/docs", label: "API" },
     { href: "/contact", label: "Контакты", id: "nav-contact" },
   ];
 

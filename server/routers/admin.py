@@ -118,6 +118,8 @@ def _serialize_model(m: AiModel) -> dict:
         "supportsSpeech": m.supports_speech,
         "supportsTranscription": m.supports_transcription,
         "supportsCoding": m.supports_coding,
+        "supportsEmbeddings": m.supports_embeddings,
+        "supportsChat": m.supports_chat,
         "isFree": m.is_free,
         "descriptionRu": m.description_ru,
         "pricingNoteRu": m.pricing_note_ru,
@@ -179,6 +181,8 @@ class AdminModelPatch(BaseModel):
     supports_speech: Optional[bool] = Field(None, alias="supportsSpeech")
     supports_transcription: Optional[bool] = Field(None, alias="supportsTranscription")
     supports_coding: Optional[bool] = Field(None, alias="supportsCoding")
+    supports_embeddings: Optional[bool] = Field(None, alias="supportsEmbeddings")
+    supports_chat: Optional[bool] = Field(None, alias="supportsChat")
     is_free: Optional[bool] = Field(None, alias="isFree")
     description_ru: Optional[str] = Field(None, alias="descriptionRu")
     pricing_note_ru: Optional[str] = Field(None, alias="pricingNoteRu")

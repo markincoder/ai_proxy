@@ -45,6 +45,39 @@ def estimate_min_spend_rub(model: AiModel, messages: list[dict[str, Any]]) -> De
     return rub_price_ceil_2(est)
 
 
+def estimate_embedding_spend_rub(model: AiModel, prompt_token_estimate: int) -> Decimal:
+    """Оценка до запроса: только входные токены (эмбеддинги без completion)."""
+    n = max(int(prompt_token_estimate), 1)
+    in_cost = Decimal(model.input_price_per_mn) * n / Decimal(1_000_000)
+    total = in_cost
+    if model.fixed_price is not None:
+        total = max(total, Decimal(model.fixed_price))
+    return rub_price_ceil_2(total)
+
+
+def compute_embedding_spend_rub(model: AiModel, usage: Optional[dict[str, Any]]) -> Decimal:
+    u = usage or {}
+    raw_cost = u.get("cost")
+    if raw_cost is not None:
+        try:
+            usd = Decimal(str(raw_cost))
+            if usd > 0:
+                total = openrouter_usd_to_balance_rub(usd)
+                if model.fixed_price is not None:
+                    return rub_price_ceil_2(max(total, Decimal(model.fixed_price)))
+                return total
+        except Exception:
+            pass
+    inp = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
+    if inp <= 0 and u.get("total_tokens") is not None:
+        inp = int(u.get("total_tokens") or 0)
+    in_cost = Decimal(model.input_price_per_mn) * inp / Decimal(1_000_000)
+    total = rub_price_ceil_2(in_cost)
+    if model.fixed_price is not None:
+        return rub_price_ceil_2(max(total, Decimal(model.fixed_price)))
+    return total
+
+
 def compute_spend_rub(
     model: AiModel,
     usage: Optional[dict[str, Any]],

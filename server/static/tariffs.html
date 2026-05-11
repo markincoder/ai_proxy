@@ -13,7 +13,7 @@
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=3" defer></script>
+    <script src="/static/js/site-header.js?v=5" defer></script>
 
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
@@ -28,6 +28,13 @@
           <strong>Про токены:</strong> в текстовых моделях цены — за <strong>1 млн токенов</strong> (вход и выход вместе).
           Простой ориентир для <strong>русского</strong> текста: <strong>1 млн токенов ≈ 300–500 тыс. слов</strong> (зависит от
           текста; для картинок, видео и аудио смотрите единицы в карточке модели).
+        </p>
+        <p class="tariffs-promo__text">
+          <strong>Попробовать в чате:</strong> откройте <a href="/">главную страницу</a> — там выбор модели и диалог
+          (нужен вход и баланс или бесплатная модель).
+          <strong>Vibe coding и эмбеддинги:</strong> отдельная страница
+          <a href="/developers">«Разработчикам»</a> со списком slug для IDE и запросов
+          <code>/v1/embeddings</code>. Ключ и примеры — <a href="/developers">«Разработчикам»</a>.
         </p>
       </aside>
 
@@ -51,6 +58,7 @@
       const MODEL_GROUPS = [
         { id: "free", emoji: "🎁", title: "Бесплатные" },
         { id: "text", emoji: "💬", title: "Текст и чат" },
+        { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
         { id: "image", emoji: "🖼", title: "Изображения в чате" },
         { id: "video", emoji: "🎬", title: "Видео" },
         { id: "transcription", emoji: "📝", title: "Транскрипция" },
@@ -59,6 +67,7 @@
       ];
 
       function modelGroupId(m) {
+        if (m.supportsEmbeddings === true && m.supportsChat === false) return "embeddings";
         if (m.isFree === true) return "free";
         if (m.supportsVideoGeneration) return "video";
         if (m.supportsImageGeneration) return "image";
@@ -87,6 +96,7 @@
         if (c.imageGeneration) return "Картинка в чате (токены)";
         if (c.speech) return "Речь / аудио в чате";
         if (c.transcription) return "Транскрипция (отдельный API)";
+        if (c.embeddings === true && c.chat === false) return "Эмбеддинги (отдельный API)";
         if (c.musicGeneration) return "Музыка";
         return "Текст (токены)";
       }
@@ -99,6 +109,16 @@
         if (m.isFree) {
           html +=
             '<p class="tariff-price-line"><strong>0 ₽</strong> — бесплатный канал (ограничения и очереди на стороне сервиса).</p>';
+          return html;
+        }
+
+        if (m.supportsEmbeddings === true && m.supportsChat === false) {
+          html +=
+            '<p class="tariff-price-line">Вход текста для вектора: <strong>' +
+            fmt(m.inputPricePerMn) +
+            ' ₽</strong> за 1 млн токенов (ориентир; фактическое списание — по <code>usage</code> от провайдера).</p>';
+          html +=
+            '<p class="tariff-price-hint">Не для чата. API: <code>POST /api/v1/embeddings</code> или <code>POST /v1/embeddings</code> с ключом <code>iip_…</code>.</p>';
           return html;
         }
 
@@ -182,6 +202,7 @@
       }
 
       function modelCardHtml(m, showCategory) {
+        const embedOnly = m.supportsEmbeddings === true && m.supportsChat === false;
         const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
         const sttOnly =
           m.capabilities?.transcription &&
@@ -192,11 +213,12 @@
         const metaLine = showCategory
           ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(categoryTitleForModel(m))}</span> · <code>${escape(m.slug)}</code>`
           : `${escape(m.provider)} · <code>${escape(m.slug)}</code>`;
-        const chatFooter =
-          `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-model-id="${escape(m.slug)}">Выбрать в чате</a>` +
-          (sttOnly
-            ? `<p class="tariff-price-hint">Только распознавание: во вкладке «Транскрипция» — микрофон или аудио 📎. Диалог — другие модели; API: <code>POST /api/v1/transcribe</code>.</p>`
-            : "");
+        const chatFooter = embedOnly
+          ? `<p class="tariff-price-hint">Только эмбеддинги: <code>POST /api/v1/embeddings</code> или IDE с base URL …<code>/v1</code> и <code>POST /v1/embeddings</code>; ключ как для чата.</p>`
+          : `<a class="btn btn-primary tariff-open-chat" href="${chatHref}" data-model-id="${escape(m.slug)}">Выбрать в чате</a>` +
+            (sttOnly
+              ? `<p class="tariff-price-hint">Только распознавание: во вкладке «Транскрипция» — микрофон или аудио 📎. Диалог — другие модели; API: <code>POST /api/v1/transcribe</code>.</p>`
+              : "");
         return `
                 <div class="tariff-card-head">
                   <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
@@ -230,7 +252,7 @@
       fetch("/api/models")
         .then((r) => r.json())
         .then((models) => {
-          const buckets = { free: [], text: [], image: [], video: [], transcription: [], speech: [], music: [] };
+          const buckets = { free: [], text: [], embeddings: [], image: [], video: [], transcription: [], speech: [], music: [] };
           for (const m of models) {
             buckets[modelGroupId(m)].push(m);
           }
@@ -290,6 +312,16 @@
               note.innerHTML =
                 "Эти модели <strong>не для диалога</strong> — только распознавание в текст. В <a href=\"/\">чате</a> выберите " +
                 "вкладку «Транскрипция» и модель, затем микрофон (удерживайте) или аудио во вложении 📎.";
+              panel.appendChild(note);
+            }
+
+            if (g.id === "embeddings") {
+              const note = document.createElement("p");
+              note.className = "hint";
+              note.style.margin = "0 0 1rem";
+              note.innerHTML =
+                "Векторизация текста для поиска и RAG. Запросы — <code>POST /api/v1/embeddings</code> или <code>POST /v1/embeddings</code> " +
+                "с тем же ключом <code>iip_…</code>, что и для чата; в чате эти модели не выбираются.";
               panel.appendChild(note);
             }
 

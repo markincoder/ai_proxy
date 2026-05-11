@@ -20,6 +20,7 @@ from .chat import (
     _messages_for_estimate,
     _resolve_user_for_model,
 )
+from .embeddings import dispatch_embeddings
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 
@@ -62,6 +63,8 @@ class OpenAiChatCompletionBody(BaseModel):
     model: str = Field(..., min_length=1, max_length=512)
     messages: list[Any]
     stream: bool = True
+    temperature: float | None = Field(default=None, ge=0, le=4)
+    max_tokens: int | None = Field(default=None, ge=1)
 
 
 @router.post("/chat/completions")
@@ -91,7 +94,13 @@ async def openai_chat_completions(request: Request):
     except ValidationError as e:
         return _openai_error(400, str(e.errors()))
 
-    chat_body = ChatJsonBody(model_slug=slug, messages=msg_objs, stream=body.stream)
+    chat_body = ChatJsonBody(
+        model_slug=slug,
+        messages=msg_objs,
+        stream=body.stream,
+        temperature=body.temperature,
+        max_tokens=body.max_tokens,
+    )
 
     msg_dicts = [m.model_dump() for m in chat_body.messages]
     with SessionLocal() as db:
@@ -105,6 +114,11 @@ async def openai_chat_completions(request: Request):
                 404,
                 f"Unknown model {slug!r}. Use GET /v1/models (or GET /api/models) for slug values from our catalog.",
             )
+        if not model_row.supports_chat:
+            return _openai_error(
+                400,
+                "Model is embeddings-only; use POST /v1/embeddings (or POST /api/v1/embeddings).",
+            )
         msgs_est = _messages_for_estimate(msg_dicts)
         try:
             user_id = _resolve_user_for_model(
@@ -114,6 +128,11 @@ async def openai_chat_completions(request: Request):
             return _http_exception_to_openai(exc)
 
     return await _handle_chat_json(chat_body, user_id, model_row)
+
+
+@router.post("/embeddings")
+async def openai_embeddings(request: Request):
+    return await dispatch_embeddings(request)
 
 
 @router.get("/models")

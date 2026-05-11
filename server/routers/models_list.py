@@ -30,6 +30,8 @@ def list_models(db: Session = Depends(get_db)):
             "supportsMusicGeneration": m.supports_music_generation,
             "supportsSpeech": m.supports_speech,
             "supportsTranscription": m.supports_transcription,
+            "supportsEmbeddings": m.supports_embeddings,
+            "supportsChat": m.supports_chat,
             "isFree": m.is_free,
             "descriptionRu": m.description_ru,
             "pricingNoteRu": m.pricing_note_ru,
@@ -41,6 +43,8 @@ def list_models(db: Session = Depends(get_db)):
                 "speech": m.supports_speech,
                 "transcription": m.supports_transcription,
                 "coding": m.supports_coding,
+                "embeddings": m.supports_embeddings,
+                "chat": m.supports_chat,
                 "free": m.is_free,
             },
         }

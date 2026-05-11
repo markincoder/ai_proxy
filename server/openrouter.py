@@ -55,6 +55,15 @@ async def chat_completions(body: dict[str, Any]) -> httpx.Response:
         )
 
 
+async def embeddings_create(body: dict[str, Any]) -> httpx.Response:
+    async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
+        return await client.post(
+            f"{openrouter_base_url()}/embeddings",
+            headers=openrouter_headers(True),
+            json=body,
+        )
+
+
 async def video_generation_create(body: dict[str, Any]) -> httpx.Response:
     async with openrouter_async_client(timeout=_client_timeout(total=120.0)) as client:
         return await client.post(

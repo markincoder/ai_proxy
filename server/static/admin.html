@@ -244,7 +244,7 @@
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=3" defer></script>
+    <script src="/static/js/site-header.js?v=5" defer></script>
 
     <main class="main-shell admin-shell">
       <div id="admin-content" style="display: none">
@@ -600,6 +600,8 @@
           <label><input type="checkbox" id="mf-sp" /> Речь в чате</label>
           <label><input type="checkbox" id="mf-tr" /> Транскрипция</label>
           <label><input type="checkbox" id="mf-code" /> Код</label>
+          <label><input type="checkbox" id="mf-emb" /> Эмбеддинги (/embeddings)</label>
+          <label><input type="checkbox" id="mf-chat" /> Чат (completions)</label>
         </div>
         <div class="admin-field">
           <label for="mf-desc">Описание (RU)</label>
@@ -1112,6 +1114,8 @@
         document.getElementById("mf-sp").checked = !!m.supportsSpeech;
         document.getElementById("mf-tr").checked = !!m.supportsTranscription;
         document.getElementById("mf-code").checked = m.supportsCoding !== false;
+        document.getElementById("mf-emb").checked = !!m.supportsEmbeddings;
+        document.getElementById("mf-chat").checked = m.supportsChat !== false;
         document.getElementById("mf-desc").value = m.descriptionRu || "";
         document.getElementById("mf-note").value = m.pricingNoteRu || "";
         document.getElementById("model-dialog").showModal();
@@ -1169,6 +1173,8 @@
           supportsSpeech: document.getElementById("mf-sp").checked,
           supportsTranscription: document.getElementById("mf-tr").checked,
           supportsCoding: document.getElementById("mf-code").checked,
+          supportsEmbeddings: document.getElementById("mf-emb").checked,
+          supportsChat: document.getElementById("mf-chat").checked,
           descriptionRu: document.getElementById("mf-desc").value.trim() || null,
           pricingNoteRu: document.getElementById("mf-note").value.trim() || null,
         };

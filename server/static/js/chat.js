@@ -416,7 +416,7 @@ async function main() {
       )
     : [];
   const sttModels = models.filter((x) => x.supportsTranscription === true);
-  const chatModels = models;
+  const chatModels = models.filter((m) => m.supportsChat !== false);
 
   const balanceEl = document.getElementById("balance");
   const modelPickerEl = document.getElementById("model-picker");

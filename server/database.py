@@ -1,4 +1,4 @@
-"""Инициализация БД и загрузка каталога моделей из `server/default_model_specs.json`."""
+"""Инициализация БД и загрузка каталогов моделей: `default_model_specs.json` и `default_embedding_specs.json`."""
 
 from __future__ import annotations
 
@@ -20,9 +20,15 @@ def _catalog_specs_path() -> Path:
     return REPO_ROOT / "server" / "default_model_specs.json"
 
 
+def _embedding_catalog_specs_path() -> Path:
+    return REPO_ROOT / "server" / "default_embedding_specs.json"
+
+
 # В образе Docker копируется в `.seed/`; при пустом томе `data/` файл подставляется при первом старте.
 _SEED_SPECS_PATH = REPO_ROOT / ".seed" / "default_model_specs.json"
+_SEED_EMBEDDING_SPECS_PATH = REPO_ROOT / ".seed" / "default_embedding_specs.json"
 _specs_cache: list[dict[str, object]] | None = None
+_embedding_specs_cache: list[dict[str, object]] | None = None
 
 
 def _ensure_default_model_specs_file() -> None:
@@ -37,6 +43,18 @@ def _ensure_default_model_specs_file() -> None:
     shutil.copy2(_SEED_SPECS_PATH, path)
 
 
+def _ensure_default_embedding_specs_file() -> None:
+    path = _embedding_catalog_specs_path()
+    if path.is_file():
+        return
+    if not _SEED_EMBEDDING_SPECS_PATH.is_file():
+        raise FileNotFoundError(
+            f"Нет файла каталога эмбеддингов: {path}. Восстановите JSON или добавьте в образ `.seed/`."
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(_SEED_EMBEDDING_SPECS_PATH, path)
+
+
 def _env_removed_slugs() -> frozenset[str]:
     """Дополнительно убрать slug из БД, даже если он ещё есть в JSON (админ задаёт в .env)."""
     raw = get_settings().removed_openrouter_slugs.strip()
@@ -45,7 +63,7 @@ def _env_removed_slugs() -> frozenset[str]:
 
 def _purge_models_not_in_catalog(db: Session, spec_slugs: set[str]) -> None:
     """
-    Удаляет из ai_models записи, которых нет в default_model_specs.json.
+    Удаляет из ai_models записи, slug которых нет в объединённом каталоге (чат + эмбеддинги).
     Плюс slug из REMOVED_OPENROUTER_SLUGS — явное исключение без правки репозитория.
     Чаты с удалённой моделью перепривязываются на THREAD_MODEL_FALLBACK_SLUG.
     """
@@ -163,6 +181,8 @@ def _parse_spec_dict(raw: dict[str, Any]) -> dict[str, object]:
     ):
         d.setdefault(k, False)
     d.setdefault("supports_coding", True)
+    d.setdefault("supports_embeddings", False)
+    d.setdefault("supports_chat", True)
     return d
 
 
@@ -176,6 +196,46 @@ def get_default_model_specs() -> list[dict[str, object]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     _specs_cache = [_parse_spec_dict(x) for x in data]
     return _specs_cache
+
+
+def get_default_embedding_specs() -> list[dict[str, object]]:
+    """Каталог моделей только для POST …/embeddings (slug не пересекаются с чат-каталогом)."""
+    global _embedding_specs_cache
+    if _embedding_specs_cache is not None:
+        return _embedding_specs_cache
+    _ensure_default_embedding_specs_file()
+    path = _embedding_catalog_specs_path()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _embedding_specs_cache = [_parse_spec_dict(x) for x in data]
+    return _embedding_specs_cache
+
+
+def _merged_specs_by_slug() -> dict[str, dict[str, object]]:
+    out: dict[str, dict[str, object]] = {}
+    for s in get_default_model_specs():
+        slug = str(s["slug"])
+        out[slug] = dict(s)
+    for s in get_default_embedding_specs():
+        slug = str(s["slug"])
+        out[slug] = dict(s)
+    return out
+
+
+def get_all_catalog_specs_ordered() -> list[dict[str, object]]:
+    """Порядок: сначала чат-каталог, затем эмбеддинги только с новыми slug."""
+    by = _merged_specs_by_slug()
+    out: list[dict[str, object]] = []
+    chat_slugs: set[str] = set()
+    for s in get_default_model_specs():
+        slug = str(s["slug"])
+        chat_slugs.add(slug)
+        out.append(by[slug])
+    for s in get_default_embedding_specs():
+        slug = str(s["slug"])
+        if slug in chat_slugs:
+            continue
+        out.append(by[slug])
+    return out
 
 
 def __getattr__(name: str) -> Any:
@@ -206,6 +266,8 @@ def _ai_model_from_spec(s: dict[str, object]) -> AiModel:
         supports_speech=bool(s.get("supports_speech", False)),
         supports_transcription=bool(s.get("supports_transcription", False)),
         supports_coding=bool(s["supports_coding"]),
+        supports_embeddings=bool(s.get("supports_embeddings", False)),
+        supports_chat=bool(s.get("supports_chat", True)),
         is_free=bool(s.get("is_free", False)),
         description_ru=str(s["description_ru"]) if s.get("description_ru") is not None else None,
         pricing_note_ru=str(s["pricing_note_ru"]) if s.get("pricing_note_ru") is not None else None,
@@ -219,7 +281,7 @@ def apply_user_facing_from_specs(db: Session, *, dry_run: bool = False) -> tuple
     """
     updated = 0
     missing_slug = 0
-    for spec in get_default_model_specs():
+    for spec in [*get_default_model_specs(), *get_default_embedding_specs()]:
         slug = str(spec["slug"])
         row = db.query(AiModel).filter(AiModel.slug == slug).first()
         if row is None:
@@ -259,8 +321,8 @@ def apply_user_facing_from_specs(db: Session, *, dry_run: bool = False) -> tuple
 
 
 def _sync_models_from_specs(db: Session) -> None:
-    """Флаги возможностей из каталога; fixed_price подставляем только если в БД пусто/0."""
-    by_slug = {str(x["slug"]): x for x in get_default_model_specs()}
+    """Флаги возможностей из объединённого каталога; fixed_price подставляем только если в БД пусто/0."""
+    by_slug = _merged_specs_by_slug()
     for row in db.query(AiModel).all():
         s = by_slug.get(row.slug)
         if not s:
@@ -272,10 +334,48 @@ def _sync_models_from_specs(db: Session) -> None:
         row.supports_speech = bool(s.get("supports_speech", False))
         row.supports_transcription = bool(s.get("supports_transcription", False))
         row.supports_coding = bool(s["supports_coding"])
+        row.supports_embeddings = bool(s.get("supports_embeddings", False))
+        row.supports_chat = bool(s.get("supports_chat", True))
         row.is_free = bool(s.get("is_free", False))
         fp = s.get("fixed_price")
         if fp is not None and (row.fixed_price is None or row.fixed_price == 0):
             row.fixed_price = fp  # type: ignore[assignment]
+
+
+def _ensure_ai_model_embedding_columns(engine: Any) -> None:
+    """Существующие БД: supports_embeddings и supports_chat (чат-only vs только эмбеддинги)."""
+    insp = inspect(engine)
+    if not insp.has_table("ai_models"):
+        return
+    cols = {c["name"] for c in insp.get_columns("ai_models")}
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if "supports_embeddings" not in cols:
+            if dialect == "postgresql":
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_models ADD COLUMN supports_embeddings BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_models ADD COLUMN supports_embeddings INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+        if "supports_chat" not in cols:
+            if dialect == "postgresql":
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_models ADD COLUMN supports_chat BOOLEAN NOT NULL DEFAULT TRUE"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_models ADD COLUMN supports_chat INTEGER NOT NULL DEFAULT 1"
+                    )
+                )
 
 
 def _ensure_users_username_password_columns(engine) -> None:
@@ -360,8 +460,9 @@ def init_db() -> None:
     _ensure_users_username_password_columns(engine)
     _ensure_user_last_chat_model_slug_column(engine)
     _ensure_user_is_blocked_column(engine)
+    _ensure_ai_model_embedding_columns(engine)
     _drop_legacy_user_pii_columns(engine)
-    specs = get_default_model_specs()
+    specs = get_all_catalog_specs_ordered()
     with SessionLocal() as db:
         known = {row[0] for row in db.query(AiModel.slug).all()}
         for s in specs:

@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from ..billing import compute_spend_rub, estimate_min_spend_rub
@@ -292,6 +292,12 @@ class ChatJsonBody(BaseModel):
     messages: list[Msg]
     stream: bool = True
     tts_voice: str | None = Field(default=None, alias="ttsVoice")
+    temperature: float | None = Field(default=None, ge=0, le=4)
+    max_tokens: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("max_tokens", "maxTokens"),
+        ge=1,
+    )
 
 
 def merge_usage_line(line: str, prev: dict[str, Any]) -> dict[str, Any]:
@@ -416,6 +422,11 @@ async def post_messages(request: Request):
         )
         if not model:
             raise HTTPException(status_code=404, detail="Unknown or inactive model")
+        if not model.supports_chat:
+            raise HTTPException(
+                status_code=400,
+                detail="Модель только для эмбеддингов; используйте POST /api/v1/embeddings.",
+            )
         if _messages_contain_input_audio(msg_dicts) and not model.supports_speech:
             raise HTTPException(
                 status_code=400,
@@ -462,6 +473,11 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
         )
         if not model:
             raise HTTPException(status_code=404, detail="Unknown or inactive model")
+        if not model.supports_chat:
+            raise HTTPException(
+                status_code=400,
+                detail="Модель только для эмбеддингов; используйте POST /api/v1/embeddings.",
+            )
         if not model.supports_speech:
             raise HTTPException(
                 status_code=400,
@@ -522,6 +538,10 @@ async def _handle_chat_json(
         "messages": [m.model_dump() for m in body.messages],
         "stream": body.stream,
     }
+    if body.temperature is not None:
+        payload["temperature"] = body.temperature
+    if body.max_tokens is not None:
+        payload["max_tokens"] = body.max_tokens
     if model.supports_image_generation:
         payload["modalities"] = ["image", "text"]
     elif model.supports_speech and model.supports_music_generation:

@@ -1,7 +1,8 @@
 # II Proxy
 
-Веб-приложение для доступа к текстовым и мультимодальным моделям через [OpenRouter](https://openrouter.ai/): учёт токенов, внутренний баланс в рублях, вход через **Яндекс ID** и **VK ID** (OAuth2), пополнение через ЮKassa. Фронтенд — статические HTML/CSS/JS, бэкенд — **FastAPI**, база — **SQLite** по умолчанию.
+Веб-приложение для доступа к текстовым и мультимодальным моделям через единый API: учёт токенов, внутренний баланс в рублях, вход через **Яндекс ID** и **VK ID** (OAuth2), пополнение через ЮKassa. Фронтенд — статические HTML/CSS/JS, бэкенд — **FastAPI**, база — **SQLite** по умолчанию.
 
+**Где посмотреть модели и попробовать:** на развёрнутом сайте — страница [«Тарифы»](/tariffs) (каталог и цены), чат с моделями — [главная](/) после входа и пополнения баланса, всё для IDE, ключи и примеры запросов — [Разработчикам](/developers).
 ## Требования
 
 - **Python 3.10+**
@@ -94,7 +95,7 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
    Для OAuth в кабинетах провайдеров укажите redirect URI с **реальным** доменом, как в разделе «Вход через Яндекс ID и VK ID».
 
 2. **Данные**  
-   В контейнере приложение использует каталог **`/app/data`**: SQLite (`app.db`), при первом старте — копия **`default_model_specs.json`** из образа, загрузки новостей — **`uploads/news`**. Каталог моделей лежит в репозитории как **`server/default_model_specs.json`** и копируется в образ. В `docker-compose.yml` путь `/app/data` смонтирован как **именованный том** `iiproxy_database`, данные переживают пересборку образа.
+   В контейнере приложение использует каталог **`/app/data`**: SQLite (`app.db`), при первом старте — копии **`default_model_specs.json`** и **`default_embedding_specs.json`** из образа, загрузки новостей — **`uploads/news`**. Файлы каталогов моделей лежат в репозитории как **`server/default_model_specs.json`** и **`server/default_embedding_specs.json`** и попадают в образ; при отсутствии файла в томе они подтягиваются из **`.seed/`**. В `docker-compose.yml` путь `/app/data` смонтирован как **именованный том** `iiproxy_database`, данные переживают пересборку образа.
 
 3. **Сборка и старт только сервиса II Proxy**  
    Команды выполняйте из **каталога, где лежит `docker-compose.yml`** (родительский каталог относительно `iiproxy.ru/`). По умолчанию compose ждёт проект в **`./iiproxy.ru`** — отдельно задавать путь не нужно.
@@ -186,8 +187,8 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 
 | Что задаёте | Значение |
 |-------------|-----------|
-| **Base URL** (OpenAI Compatible) | `https://<ваш-домен>/v1` — без слэша в конце; клиент добавит `/chat/completions` или возьмёт список моделей с `/v1/models`. |
-| **API Key** | ключ разработчика с страницы [API для разработчиков](/docs) (строка `iip_…`). Cookie-сессия браузера для этих клиентов обычно не подходит. |
+| **Base URL** (OpenAI Compatible) | `https://<ваш-домен>/v1` — без слэша в конце; клиент добавит `/chat/completions` или при необходимости `/embeddings`, либо возьмёт список моделей с `/v1/models`. |
+| **API Key** | ключ разработчика со страницы [Разработчикам](/developers) (раздел «Ключи доступа»; строка `iip_…`). Cookie-сессия браузера для этих клиентов обычно не подходит. |
 | **Model** | **slug модели из каталога**, тот же, что в интерфейсе и в `GET /api/models`: например `openai/gpt-4o`, `google/gemini-2.5-flash`, `openrouter/free`. Полный список активных slug: `GET /v1/models` или [«Тарифы»](/tariffs). |
 
 Поведение запросов (биллинг, бесплатные модели, поток SSE, списание с баланса) совпадает с `POST /api/v1/messages`: **`model`** в теле эквивалентен **`modelSlug`**. Поля OpenAI вроде `temperature` / `max_tokens` текущая прокси **игнорирует** и не пробрасывает в OpenRouter (при необходимости их можно добавить отдельно).
@@ -198,12 +199,14 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 curl -sS -X POST "https://YOUR_DOMAIN/v1/chat/completions" \
   -H "Authorization: Bearer iip_YOUR_KEY" \
   -H "Content-Type: application/json; charset=utf-8" \
-  -d "{\"model\":\"openai/gpt-4o\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"
+  -d "{\"model\":\"openai/gpt-4o\",\"stream\":false,\"temperature\":0.7,\"max_tokens\":512,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"
 ```
 
 Вызов «от имени сервиса» (бот, скрипт без `iip_`): по-прежнему заголовки `X-Internal-Secret: <INTERNAL_API_SECRET>` и `X-User-Id: <id пользователя в БД>` — для маршрута `/v1/chat/completions` они тоже учитываются, как для `/api/v1/messages`.
 
-Справка по маршрутам доступна после запуска: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/swagger) (Swagger UI).
+**Эмбеддинги:** `POST /api/v1/embeddings` или OpenAI-совместимый `POST /v1/embeddings`; в теле — `model` (slug из каталога с `supportsEmbeddings`) и `input` (строка или массив строк), остальные поля пробрасываются провайдеру. Нужен ключ `iip_…`; гости без ключа получают 401. Запросы чата (`…/messages` или `…/chat/completions`) для моделей только с эмбеддингами отклоняются — используйте эндпоинт эмбеддингов.
+
+Справка по HTTP-маршрутам в машиночитаемом виде: [Swagger UI](http://127.0.0.1:8000/swagger) после локального запуска.
 
 ## Тарифы ₽ / 1M токенов (вход / выход)
 
@@ -221,6 +224,6 @@ python scripts/sync_openrouter_prices.py
 
 `--dry-run` — только печать без записи в БД. Модели **без** числового token pricing в API (часть видео, исчезнувшие slug) в скрипте пропускаются — для них цены в `server/database.py` заданы вручную как ориентир.
 
-В каталоге и админке у каждой строки `ai_models` задаются флаги типа: **видео** (отдельный API `POST /videos`), **транскрипция** (`/audio/transcriptions`, в чате не выбирается), **речь в чате** (модели с аудиовыходом в completions), **музыка** (например Lyria). Чат и тарифы группируют карточки по этим признакам.
+В каталоге и админке у каждой строки `ai_models` задаются флаги типа: **видео** (отдельный API `POST /videos`), **транскрипция** (`/audio/transcriptions`, в чате не выбирается), **речь в чате** (модели с аудиовыходом в completions), **музыка** (например Lyria), **эмбеддинги** (`POST /api/v1/embeddings`). Чат и тарифы группируют карточки по этим признакам.
 
-**Видео (Veo, Sora, Seedance)** и прочие неактуальные идентификаторы: **записи в `ai_models`, которых нет в `server/default_model_specs.json`, при старте удаляются** (треды перепривязываются на `THREAD_MODEL_FALLBACK_SLUG`). Дополнительно через **`.env`** можно задать **`REMOVED_OPENROUTER_SLUGS`**, чтобы убрать slug без правки JSON. **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**. **Музыка:** **google/lyria-3-*** (на OpenRouter доступны как preview-идентификаторы). **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок в чате: **openai/gpt-5-image** / **gpt-5-image-mini**, **google/gemini-2.5-flash-image** и др.
+**Видео (Veo, Sora, Seedance)** и прочие неактуальные идентификаторы: **записи в `ai_models`, slug которых нет в объединении `server/default_model_specs.json` и `server/default_embedding_specs.json`, при старте удаляются** (треды перепривязываются на `THREAD_MODEL_FALLBACK_SLUG`). Дополнительно через **`.env`** можно задать **`REMOVED_OPENROUTER_SLUGS`**, чтобы убрать slug без правки JSON. **Речь в чате:** **openai/gpt-audio**, **gpt-audio-mini**. **Музыка:** **google/lyria-3-*** (на OpenRouter доступны как preview-идентификаторы). **Транскрипция:** например **openai/whisper-1** (голосовой ввод в UI идёт через этот slug на сервере). Отдельного **ElevenLabs** в каталоге OpenRouter нет. Генерация картинок в чате: **openai/gpt-5-image** / **gpt-5-image-mini**, **google/gemini-2.5-flash-image** и др.
