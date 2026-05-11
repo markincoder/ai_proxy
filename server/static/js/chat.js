@@ -475,6 +475,12 @@ function brandIconRemoteUrl(host) {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
 }
 
+/** Сеть/провайдер; без внутренних деталей */
+const MSG_CHAT_NO_UPSTREAM =
+  "Сейчас нет связи с провайдером модели. Повторите запрос позже. Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
+const HINT_SUPPORT_IF_REPEATS =
+  " Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
+
 /**
  * Понятные подсказки к ответам модели в потоке.
  * :free в slug и openrouter/free — правда общая очередь; is_free без :free в slug — только флаг в БД, текст нейтральнее.
@@ -498,7 +504,7 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
     m.includes("попробуйте в .env") ||
     low.includes("upstream unavailable")
   ) {
-    return "Сейчас нет связи с провайдером модели. Повторите запрос позже.";
+    return MSG_CHAT_NO_UPSTREAM;
   }
 
   const providerBlob = () => {
@@ -2377,7 +2383,7 @@ async function main() {
       }
     } catch (e) {
       console.error("[chat] transcribe", e);
-      errEl.textContent = "Сеть или сервер недоступны.";
+      errEl.textContent = "Сеть или сервер недоступны." + HINT_SUPPORT_IF_REPEATS;
       errEl.style.display = "block";
     } finally {
       transcribing = false;

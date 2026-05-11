@@ -1,6 +1,5 @@
 import base64
 import json
-import logging
 from decimal import Decimal
 from typing import Any, Annotated, AsyncIterator
 
@@ -13,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..billing import compute_spend_rub, estimate_min_spend_rub
 from ..database import SessionLocal
 from ..deps import resolve_user_id
+from ..error_logging import log_upstream_request_failure
 from ..models import AiModel
 from ..openrouter import (
     chat_completions,
@@ -26,14 +26,17 @@ from ..openai_audio_input import reencode_audio_bytes_to_wav
 from ..pricing_rub import rub_price_ceil_2
 from ..services.spend import assert_balance_covers_estimate, record_spend
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 _VOICE_PLACEHOLDER_CHARS = 4000
 _MAX_AUDIO_BYTES = 25 * 1024 * 1024
 _DEFAULT_STT_SLUG = "openai/whisper-1"
 _DEFAULT_TTS_VOICE = "alloy"
+# Нет TCP/HTTP до провайдера; без внутренних деталей. Повтор — в поддержку.
+_MSG_NO_UPSTREAM = (
+    "Сейчас нет связи с провайдером модели. Повторите запрос позже. "
+    "Если ошибка повторяется, напишите в поддержку — раздел «Контакты»."
+)
 _ALLOWED_TTS_VOICES = frozenset(
     {"alloy", "echo", "fable", "onyx", "nova", "shimmer"},
 )
@@ -211,10 +214,10 @@ async def _transcribe_and_bill(
             content, filename, mime, stt.slug, language=language
         )
     except httpx.RequestError as exc:
-        logger.warning("transcribe: нет связи с провайдером: %s", exc, exc_info=True)
+        log_upstream_request_failure("transcribe.audio", exc)
         raise HTTPException(
             status_code=503,
-            detail="Сейчас нет связи с провайдером модели. Повторите запрос позже.",
+            detail=_MSG_NO_UPSTREAM,
         ) from exc
     if tr.status_code >= 400:
         raise HTTPException(
@@ -654,12 +657,12 @@ async def _handle_chat_json(
         try:
             upstream = await chat_completions(payload)
         except httpx.RequestError as exc:
-            logger.warning("chat completions: нет связи с провайдером: %s", exc, exc_info=True)
+            log_upstream_request_failure("chat.completions", exc)
             return JSONResponse(
                 status_code=503,
                 content={
                     "error": "provider_unavailable",
-                    "detail": "Сейчас нет связи с провайдером модели. Повторите запрос позже.",
+                    "detail": _MSG_NO_UPSTREAM,
                 },
             )
         if upstream.status_code >= 400:
@@ -708,10 +711,8 @@ async def _handle_chat_json(
                     if line_carry.strip():
                         state = merge_usage_line(line_carry, state)
         except httpx.RequestError as exc:
-            logger.warning("chat stream: нет связи с провайдером: %s", exc, exc_info=True)
-            yield _sse_upstream_error(
-                "Сейчас нет связи с провайдером модели. Повторите запрос позже."
-            )
+            log_upstream_request_failure("chat.stream", exc)
+            yield _sse_upstream_error(_MSG_NO_UPSTREAM)
             return
 
         cost = compute_spend_rub(model, state.get("usage"))

@@ -117,6 +117,37 @@ def schedule_payment_notification(
     _fire_and_forget(run)
 
 
+def schedule_error_log_notification(
+    log_id: str,
+    context: str,
+    error_type: str,
+    message: str | None,
+    traceback_preview: str | None = None,
+) -> None:
+    """Уведомление админу: запись в таблице error_logs (ошибка уже сохранена в БД)."""
+
+    def run() -> None:
+        subject = f"[II Proxy] error_logs: {error_type}"
+        tb = (traceback_preview or "").strip()
+        if len(tb) > 3200:
+            tb = tb[:3197] + "..."
+        body_parts = [
+            "Новая запись в журнале ошибок (таблица error_logs).\n",
+            f"ID записи: {log_id}\n",
+            f"Тип: {error_type}\n",
+            f"Контекст: {context}\n",
+        ]
+        if message:
+            m = message if len(message) <= 3500 else message[:3497] + "..."
+            body_parts.append(f"Сообщение: {m}\n")
+        if tb:
+            body_parts.append(f"\nФрагмент traceback:\n{tb}\n")
+        body = "".join(body_parts)
+        _notify_admin(subject, body)
+
+    _fire_and_forget(run)
+
+
 def schedule_support_message_notification(
     ticket_id: str,
     user_id: str,
