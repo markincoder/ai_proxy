@@ -1,6 +1,6 @@
 # II Proxy
 
-Веб-приложение для доступа к текстовым и мультимодальным моделям через единый API: учёт токенов, внутренний баланс в рублях, вход через **Яндекс ID** и **VK ID** (OAuth2), пополнение через ЮKassa. Фронтенд — статические HTML/CSS/JS, бэкенд — **FastAPI**, база — **SQLite** по умолчанию.
+Веб-приложение для доступа к текстовым и мультимодальным моделям через единый API: учёт токенов, внутренний баланс в рублях, вход через **Яндекс ID** и **VK ID** (OAuth2), пополнение через ЮKassa. Фронтенд — статические HTML/CSS/JS, бэкенд — **FastAPI**, база данных — по умолчанию **SQLite** (также **MySQL 8** и PostgreSQL через `DATABASE_URL`).
 
 **Где посмотреть модели и попробовать:** на развёрнутом сайте — страница [«Тарифы»](/tariffs) (каталог и цены), чат с моделями — [главная](/) после входа и пополнения баланса, всё для IDE, ключи и примеры запросов — [Разработчикам](/developers).
 ## Требования
@@ -43,7 +43,7 @@
 
 | Переменная | Описание |
 |------------|----------|
-| `DATABASE_URL` | Строка подключения SQLAlchemy. По умолчанию SQLite: файл БД создаётся автоматически при первом запуске (см. раздел «База данных»). |
+| `DATABASE_URL` | Строка подключения SQLAlchemy (**SQLite**, **PostgreSQL**, **MySQL 8** с `mysql+pymysql://…`). SQLite: файл создаётся при первом запуске. Для паролей со спецсимволами в URL используйте процент‑кодирование. |
 | `SESSION_SECRET` или `NEXTAUTH_SECRET` | Секрет для подписи cookie-сессии. В продакшене задайте длинную случайную строку (например: `openssl rand -base64 32`). |
 | `OPENROUTER_API_KEY` | Ключ с [openrouter.ai/keys](https://openrouter.ai/keys). **Обязателен** для чата. |
 | `OPENROUTER_APP_TITLE` | Название приложения в заголовках OpenRouter (`X-Title`). |
@@ -153,7 +153,7 @@ python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 ```
 
-Для SQLite можно открыть файл БД из `DATABASE_URL` любым клиентом; для PostgreSQL — через `psql` или панель хостинга.
+Для SQLite можно открыть файл БД из `DATABASE_URL` любым клиентом; для PostgreSQL — через `psql`; для MySQL — `mysql` CLI или phpMyAdmin / панель хостинга.
 
 ## Вход через Яндекс ID и VK ID
 
@@ -175,7 +175,15 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 
 По умолчанию используется **SQLite**. Файл создаётся при старте приложения (таблицы и начальный набор моделей в `ai_models` подставляются автоматически, если таблица пустая). Путь к файлу задаётся через `DATABASE_URL`; для относительного пути каталог разрешается относительно корня репозитория, обычно это `data/app.db`.
 
-Для продакшена можно указать PostgreSQL в `DATABASE_URL` в формате SQLAlchemy и при необходимости скорректировать модели/миграции под вашу среду.
+Поддерживаются **PostgreSQL**, **MySQL 8** (драйвер [PyMySQL](https://github.com/PyMySQL/PyMySQL), схема `mysql+pymysql://`), **SQLite**. Укажите `DATABASE_URL` в формате SQLAlchemy. Для нестандартных СУБД могут понадобиться точечные правки типов DDL.
+
+Пример для MySQL 8 после создания пользователя и пустой БД:
+
+```text
+DATABASE_URL=mysql+pymysql://USER:PASSWORD@ХОСТ:3306/ИМЯ_БД?charset=utf8mb4
+```
+
+Для стандартного плагина аутентификации MySQL 8 (`caching_sha2_password`) PyMySQL использует пакет **`cryptography`** — он указан в `requirements.txt` и попадает в Docker-образ при сборке.
 
 ## API для интеграций
 
@@ -220,6 +228,12 @@ curl -sS -X POST "https://YOUR_DOMAIN/v1/chat/completions" \
 
 ```bash
 python scripts/sync_openrouter_prices.py
+```
+
+Иконки брендов в чате: локальные PNG в `server/static/icons/brand/` — обновить или добавить файл после изменения домена в карте префиксов в `server/static/js/chat.js`:
+
+```bash
+python scripts/download_brand_icons.py
 ```
 
 Тот же алгоритм вызывается из **админки** на вкладке «Модели» (курс + коэффициент → **Применить**): запрос к OpenRouter, пересчёт и запись ₽ для slug из `server/default_model_specs.json`; курс и коэффициент сохраняются в `site_pricing_factors` и далее участвуют в `resolve_usd_rub_markup()` (пока не заданы в БД — как раньше, читаются из `.env`).

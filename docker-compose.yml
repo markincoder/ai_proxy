@@ -120,7 +120,8 @@ services:
     env_file:
       - ${IIPROXY_APP_DIR:-./iiproxy.ru}/.env
     environment:
-      DATABASE_URL: sqlite:////app/data/app.db
+      # DATABASE_URL — только в .env проекта на сервере (не держите пароль здесь и в Git).
+      # В URL спецсимволы пароля кодируйте: например ! → %21 → ... "mysql+pymysql://user:p%21123@..."
       NEXT_PUBLIC_APP_URL: https://iiproxy.ru
     volumes:
       - iiproxy_database:/app/data

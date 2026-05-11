@@ -359,8 +359,16 @@ input[type="number"] {
   outline-offset: 2px;
 }
 
-.model-tab-emoji {
-  font-size: 1rem;
+.model-tab-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.model-tab-icon-wrap--emoji {
+  font-size: 1.125rem;
   line-height: 1;
 }
 
@@ -2074,6 +2082,10 @@ select.settings-select {
     font-size: 0.875rem;
   }
 
+  .model-tab-icon-wrap--emoji {
+    font-size: 1.2rem;
+  }
+
   .model-picker-search {
     min-height: 2.6rem;
     padding-inline: 0.9rem;
@@ -2638,7 +2650,7 @@ select.settings-select {
   box-shadow: var(--shadow-sm);
 }
 
-.tariffs-tab-emoji {
+.tariffs-tab .model-tab-icon-wrap--emoji {
   font-size: 1rem;
   line-height: 1;
 }

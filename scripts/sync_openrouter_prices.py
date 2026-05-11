@@ -82,7 +82,7 @@ def main() -> None:
             n_copy, n_absent = apply_user_facing_from_specs(db, dry_run=False)
         db.commit()
         print(
-            f"\nSQLite/Postgres: обновлено строк ai_models из OpenRouter-синка: {rows_touched} "
+            f"\nБД (SQLite / PostgreSQL / MySQL): обновлено строк ai_models из OpenRouter-синка: {rows_touched} "
             f"/ обработано slug: {len(updates)}.",
         )
         if n_copy:

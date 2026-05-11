@@ -428,27 +428,51 @@ function hueFromSlug(slug) {
 }
 
 /**
- * Иконки брендов через публичный favicon (стабильнее, чем прямой путь к simple-icons — без 404 из‑за версии/имени).
+ * Локальные PNG из /static/icons/brand/ (см. scripts/download_brand_icons.py);
+ * если файла ещё нет — браузер грузит тот же favicon через Google CDN (на лету).
  */
-function brandFaviconDomain(slug) {
-  if (!slug) return null;
-  if (slug.startsWith("openrouter/")) return "openrouter.ai";
-  if (slug.startsWith("openai/")) return "openai.com";
-  if (slug.startsWith("anthropic/")) return "anthropic.com";
-  if (slug.startsWith("google/")) return "google.com";
-  if (slug.startsWith("meta-llama/")) return "meta.com";
-  if (slug.startsWith("mistralai/")) return "mistral.ai";
-  if (slug.startsWith("deepseek/")) return "deepseek.com";
-  if (slug.startsWith("qwen/")) return "alibaba.com";
-  if (slug.startsWith("bytedance/")) return "bytedance.com";
-  return null;
+const MODEL_SLUG_FIRST_SEGMENT_TO_BRAND_HOST = Object.freeze({
+  openrouter: "openrouter.ai",
+  openai: "openai.com",
+  anthropic: "anthropic.com",
+  google: "google.com",
+  "meta-llama": "meta.com",
+  mistralai: "mistral.ai",
+  deepseek: "deepseek.com",
+  qwen: "alibaba.com",
+  bytedance: "bytedance.com",
+  nvidia: "nvidia.com",
+  poolside: "poolside.ai",
+  minimax: "minimax.chat",
+  kwaivgi: "kuaishou.com",
+  alibaba: "alibaba.com",
+  "x-ai": "x.ai",
+  moonshotai: "moonshot.cn",
+  perplexity: "perplexity.ai",
+  xiaomi: "xiaomi.com",
+  baai: "baai.ac.cn",
+});
+
+const BRAND_ICON_STATIC_BASE = "/static/icons/brand";
+
+function brandHostForSlug(slug) {
+  if (!slug || typeof slug !== "string") return null;
+  const seg = slug.split("/")[0].toLowerCase();
+  return MODEL_SLUG_FIRST_SEGMENT_TO_BRAND_HOST[seg] ?? null;
 }
 
-function modelBrandIconUrl(slug) {
-  const host = brandFaviconDomain(slug);
-  return host
-    ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
-    : null;
+function brandIconFileBase(domain) {
+  return domain.replace(/\./g, "-");
+}
+
+function brandIconLocalUrl(host) {
+  if (!host) return null;
+  return `${BRAND_ICON_STATIC_BASE}/${brandIconFileBase(host)}.png`;
+}
+
+function brandIconRemoteUrl(host) {
+  if (!host) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
 }
 
 /**
@@ -1130,8 +1154,9 @@ async function main() {
 
         const iconWrap = document.createElement("span");
         iconWrap.className = "model-card-icon";
-        const iconUrl = modelBrandIconUrl(m.slug);
-        if (iconUrl) {
+        const iconHost = brandHostForSlug(m.slug);
+        const iconUrl = iconHost ? brandIconLocalUrl(iconHost) : null;
+        if (iconUrl && iconHost) {
           const img = document.createElement("img");
           img.src = iconUrl;
           img.alt = "";
@@ -1141,6 +1166,11 @@ async function main() {
           img.decoding = "async";
           img.className = "model-card-icon-img";
           img.addEventListener("error", () => {
+            if (!img.dataset.remoteTried && iconHost) {
+              img.dataset.remoteTried = "1";
+              img.src = brandIconRemoteUrl(iconHost);
+              return;
+            }
             img.remove();
             const fallback = document.createElement("span");
             fallback.className = "model-card-avatar model-card-avatar--sm";
@@ -1209,7 +1239,9 @@ async function main() {
         tab.setAttribute("aria-controls", panelId);
         tab.setAttribute("tabindex", isInitial ? "0" : "-1");
         tab.dataset.group = g.id;
-        tab.innerHTML = `<span class="model-tab-emoji" aria-hidden="true">${g.emoji}</span><span class="model-tab-label">${escapeHtml(g.title)}</span>`;
+        tab.innerHTML =
+          `<span class="model-tab-icon-wrap model-tab-icon-wrap--emoji" aria-hidden="true">${g.emoji}</span>` +
+          `<span class="model-tab-label">${escapeHtml(g.title)}</span>`;
 
         const panel = document.createElement("div");
         panel.className = "model-tab-panel";

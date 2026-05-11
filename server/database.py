@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import REPO_ROOT, get_settings
@@ -110,9 +111,22 @@ _db_url = (
     else _settings.database_url
 )
 
+_url_obj = make_url(_db_url)
+_is_sqlite = _url_obj.drivername == "sqlite"
+_is_mysql = _url_obj.drivername.startswith("mysql")
+
+_connect_args: dict[str, object] = {}
+_engine_kwargs: dict[str, object] = {}
+if _is_sqlite:
+    _connect_args = {"check_same_thread": False}
+elif _is_mysql:
+    _connect_args = {"charset": "utf8mb4"}
+    _engine_kwargs["pool_pre_ping"] = True
+
 engine = create_engine(
     _db_url,
-    connect_args={"check_same_thread": False} if _db_url.startswith("sqlite") else {},
+    connect_args=_connect_args,
+    **_engine_kwargs,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -121,6 +135,7 @@ def run_vacuum_and_analyze(engine: Any, *, vacuum: bool, analyze: bool) -> dict[
     """
     После крупных DELETE: VACUUM (SQLite) возвращает место в файле; ANALYZE обновляет статистику планировщика.
     VACUUM в SQLite нельзя выполнять внутри обычной транзакции — используем AUTOCOMMIT.
+    MySQL: «vacuum» ≈ OPTIMIZE TABLE по таблицам приложения (InnoDB, может быть долго); ANALYZE — статистика.
     """
     dialect = engine.dialect.name
     steps: list[str] = []
@@ -149,6 +164,22 @@ def run_vacuum_and_analyze(engine: Any, *, vacuum: bool, analyze: bool) -> dict[
             with engine.begin() as conn:
                 conn.execute(text("ANALYZE"))
             steps.append("ANALYZE")
+    elif dialect == "mysql":
+        tables = sorted(Base.metadata.tables.keys())
+        if tables:
+            quoted = ", ".join(f"`{n}`" for n in tables)
+            if vacuum:
+                with engine.begin() as conn:
+                    for name in tables:
+                        conn.execute(text(f"OPTIMIZE TABLE `{name}`"))
+                steps.append("OPTIMIZE TABLE")
+            if analyze:
+                if not vacuum:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ANALYZE TABLE {quoted}"))
+                    steps.append("ANALYZE TABLE")
+                else:
+                    steps.append("ANALYZE (статистика обновлена OPTIMIZE для InnoDB)")
     else:
         if analyze:
             with engine.begin() as conn:
@@ -346,7 +377,7 @@ def _ensure_ai_model_embedding_columns(engine: Any) -> None:
     dialect = engine.dialect.name
     with engine.begin() as conn:
         if "supports_embeddings" not in cols:
-            if dialect == "postgresql":
+            if dialect in ("postgresql", "mysql"):
                 conn.execute(
                     text(
                         "ALTER TABLE ai_models ADD COLUMN supports_embeddings BOOLEAN NOT NULL DEFAULT FALSE"
@@ -359,7 +390,7 @@ def _ensure_ai_model_embedding_columns(engine: Any) -> None:
                     )
                 )
         if "supports_chat" not in cols:
-            if dialect == "postgresql":
+            if dialect in ("postgresql", "mysql"):
                 conn.execute(
                     text(
                         "ALTER TABLE ai_models ADD COLUMN supports_chat BOOLEAN NOT NULL DEFAULT TRUE"
@@ -396,6 +427,29 @@ def _ensure_users_username_password_columns(engine) -> None:
                         "WHERE username IS NOT NULL"
                     )
                 )
+            elif dialect == "mysql":
+                # При create_all на свежей БД уже есть UNIQUE(slug-подобное) из модели; не дублируем индекс.
+                has_uq_username = False
+                try:
+                    for uq in insp.get_unique_constraints("users") or []:
+                        cols = tuple(uq.get("column_names") or ())
+                        if "username" in cols:
+                            has_uq_username = True
+                            break
+                    if not has_uq_username:
+                        for ix in insp.get_indexes("users") or []:
+                            cn = list(ix.get("column_names") or [])
+                            if ix.get("unique") and cn == ["username"]:
+                                has_uq_username = True
+                                break
+                except Exception:
+                    pass
+                if not has_uq_username:
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX ix_users_username_unique ON users(username)"
+                        )
+                    )
 
 
 def _ensure_user_last_chat_model_slug_column(engine) -> None:
@@ -444,6 +498,8 @@ def _drop_legacy_user_pii_columns(engine) -> None:
             with engine.begin() as conn:
                 if dialect == "sqlite":
                     conn.execute(text(f'ALTER TABLE users DROP COLUMN "{col}"'))
+                elif dialect == "mysql":
+                    conn.execute(text(f"ALTER TABLE users DROP COLUMN `{col}`"))
                 else:
                     conn.execute(text(f"ALTER TABLE users DROP COLUMN {col}"))
         except Exception:

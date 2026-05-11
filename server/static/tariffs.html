@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=68" />
+    <link rel="stylesheet" href="/static/css/style.css?v=70" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
@@ -321,7 +321,9 @@
             tab.setAttribute("aria-controls", `tariff-panel-${g.id}`);
             tab.id = `tariff-tab-${g.id}`;
             tab.dataset.group = g.id;
-            tab.innerHTML = `<span class="tariffs-tab-emoji" aria-hidden="true">${g.emoji}</span><span>${escape(g.title)}</span>`;
+            tab.innerHTML =
+              `<span class="model-tab-icon-wrap model-tab-icon-wrap--emoji" aria-hidden="true">${g.emoji}</span>` +
+              `<span>${escape(g.title)}</span>`;
             tablist.appendChild(tab);
 
             const panel = document.createElement("div");
