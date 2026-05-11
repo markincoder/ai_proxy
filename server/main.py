@@ -94,6 +94,11 @@ def create_app() -> FastAPI:
             media_type="image/svg+xml",
         )
 
+    @app.get("/health")
+    def health():
+        """Живость процесса для балансировщика и мониторинга (БД не проверяется)."""
+        return {"status": "ok"}
+
     @app.get("/")
     def index():
         return _html(STATIC_DIR / "index.html")

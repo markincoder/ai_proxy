@@ -1,7 +1,7 @@
 import base64
 import json
 from decimal import Decimal
-from typing import Any, AsyncIterator
+from typing import Any, Annotated, AsyncIterator
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -21,7 +21,7 @@ from ..openrouter import (
     openrouter_headers,
     transcribe_audio,
 )
-from ..openai_audio_input import openai_gpt_audio_style_model, reencode_audio_bytes_to_wav
+from ..openai_audio_input import reencode_audio_bytes_to_wav
 from ..pricing_rub import rub_price_ceil_2
 from ..services.spend import assert_balance_covers_estimate, record_spend
 
@@ -104,6 +104,29 @@ def _estimate_transcribe_floor_rub(stt: AiModel) -> Decimal:
     return rub_price_ceil_2(base)
 
 
+def _pick_stt_model_for_voice_input(db: Session) -> AiModel | None:
+    stt = (
+        db.query(AiModel)
+        .filter(
+            AiModel.slug == _DEFAULT_STT_SLUG,
+            AiModel.is_active.is_(True),
+            AiModel.supports_transcription.is_(True),
+        )
+        .first()
+    )
+    if not stt:
+        stt = (
+            db.query(AiModel)
+            .filter(
+                AiModel.supports_transcription.is_(True),
+                AiModel.is_active.is_(True),
+            )
+            .order_by(AiModel.input_price_per_mn.asc())
+            .first()
+        )
+    return stt
+
+
 def _openrouter_http_error_detail(resp: httpx.Response) -> str:
     """
     Текст ошибки OpenRouter для HTTPException(detail=...).
@@ -159,68 +182,16 @@ def _parse_optional_stt_language(raw: str | None) -> str | None:
 
 
 def _needs_voice_then_tts(model: AiModel, raw_msgs: list[dict[str, Any]]) -> bool:
-    """Два вызова OpenRouter: ответ по входному аудио (без TTS), затем синтез речи."""
+    """GPT Audio в каталоге (speech + music_generation) при голосе пользователя.
+
+    Для `_handle_chat_json`: сначала STT, затем один streamed completion с audio (см. ниже).
+    Для `_resolve_user_for_model`: к оценке чата добавляется нижняя граница STT.
+    """
     return (
         model.supports_speech
         and model.supports_music_generation
         and _messages_contain_input_audio(raw_msgs)
     )
-
-
-def _content_piece_from_openrouter_sse_data(payload: str) -> str:
-    """Текстовые дельты ассистента из строки SSE data: {...}."""
-    if not payload or payload.strip() == "[DONE]":
-        return ""
-    try:
-        j = json.loads(payload)
-    except json.JSONDecodeError:
-        return ""
-    chs = j.get("choices")
-    if not isinstance(chs, list) or not chs:
-        return ""
-    delta = chs[0].get("delta") if isinstance(chs[0], dict) else None
-    if not isinstance(delta, dict):
-        return ""
-    c = delta.get("content")
-    if isinstance(c, str):
-        return c
-    if isinstance(c, list):
-        out: list[str] = []
-        for p in c:
-            if isinstance(p, dict) and p.get("type") == "text":
-                out.append(str(p.get("text") or ""))
-        return "".join(out)
-    return ""
-
-
-def _tts_second_turn_message(assistant_text: str) -> str:
-    return (
-        "Read the following response aloud exactly, with natural intonation. "
-        "Do not add preamble or commentary; only produce the spoken audio matching this text:\n\n"
-        + assistant_text.strip()
-    )
-
-
-def _sse_line_redact_delta_content_for_tts_stream(raw_line: str) -> bytes:
-    """Во 2-м шаге OpenRouter дублирует текст в delta.content — убираем, оставляем delta.audio."""
-    t = raw_line.strip()
-    if not t.startswith("data:"):
-        line_out = raw_line if raw_line.endswith("\n") else raw_line + "\n"
-        return line_out.encode("utf-8")
-    payload = t[5:].strip()
-    if payload == "[DONE]":
-        return b"data: [DONE]\n\n"
-    try:
-        j = json.loads(payload)
-    except json.JSONDecodeError:
-        line_out = raw_line if raw_line.endswith("\n") else raw_line + "\n"
-        return line_out.encode("utf-8")
-    chs = j.get("choices")
-    if isinstance(chs, list) and chs and isinstance(chs[0], dict):
-        delta = chs[0].get("delta")
-        if isinstance(delta, dict) and "content" in delta:
-            del delta["content"]
-    return ("data: " + json.dumps(j, ensure_ascii=False) + "\n\n").encode("utf-8")
 
 
 async def _transcribe_and_bill(
@@ -291,13 +262,118 @@ class ChatJsonBody(BaseModel):
     model_slug: str = Field(alias="modelSlug")
     messages: list[Msg]
     stream: bool = True
-    tts_voice: str | None = Field(default=None, alias="ttsVoice")
+    tts_voice: Annotated[str | None, Field(default=None, alias="ttsVoice")]
     temperature: float | None = Field(default=None, ge=0, le=4)
     max_tokens: int | None = Field(
         default=None,
         validation_alias=AliasChoices("max_tokens", "maxTokens"),
         ge=1,
     )
+
+
+async def _gpt_audio_voice_turn_stt_then_text_body(
+    body: ChatJsonBody,
+    user_id: str | None,
+) -> ChatJsonBody:
+    """Для GPT Audio через OpenRouter: STT из input_audio → текст в чат → один поток с TTS модели."""
+    msgs_dump = [m.model_dump(mode="python") for m in body.messages]
+
+    idx: int | None = None
+    audio_fmt = "wav"
+    audio_bytes: bytes | None = None
+    text_hints: list[str] = []
+
+    for i in range(len(msgs_dump) - 1, -1, -1):
+        m = msgs_dump[i]
+        if m.get("role") != "user":
+            continue
+        c = m.get("content")
+        if not isinstance(c, list):
+            continue
+        found_audio = False
+        hints: list[str] = []
+        for part in c:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "text":
+                txt = part.get("text")
+                if isinstance(txt, str) and txt.strip():
+                    hints.append(txt.strip())
+            if part.get("type") == "input_audio":
+                ia = part.get("input_audio")
+                if isinstance(ia, dict):
+                    b64 = ia.get("data")
+                    if isinstance(b64, str):
+                        try:
+                            audio_bytes = base64.b64decode(b64, validate=False)
+                        except (ValueError, TypeError):
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Некорректный base64 в input_audio",
+                            ) from None
+                    audio_fmt = str(ia.get("format") or "wav").lower()
+                    found_audio = True
+        if found_audio and audio_bytes:
+            idx = i
+            text_hints = hints
+            break
+
+    if idx is None or not audio_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="В сообщении пользователя отсутствует input_audio для голосового ввода.",
+        )
+
+    mime_map = {
+        "wav": "audio/wav",
+        "wave": "audio/wav",
+        "mp3": "audio/mpeg",
+        "mpeg": "audio/mpeg",
+        "webm": "audio/webm",
+        "ogg": "audio/ogg",
+        "flac": "audio/flac",
+        "mp4": "audio/mp4",
+        "m4a": "audio/mp4",
+    }
+    mime = mime_map.get(audio_fmt, "application/octet-stream")
+    safe_ext = audio_fmt if audio_fmt in mime_map else "bin"
+    fname = f"voice.{safe_ext}"
+
+    with SessionLocal() as db:
+        stt = _pick_stt_model_for_voice_input(db)
+        if not stt:
+            raise HTTPException(
+                status_code=503,
+                detail="Нет активной модели STT для голосового ввода GPT Audio.",
+            )
+        est = _estimate_transcribe_floor_rub(stt)
+        if est > 0:
+            if not user_id:
+                raise HTTPException(status_code=401, detail="LOGIN_REQUIRED")
+            assert_balance_covers_estimate(db, user_id, est)
+
+    transcript, _ = await _transcribe_and_bill(
+        user_id, stt, audio_bytes, fname, mime, language=None
+    )
+    transcript = (transcript or "").strip()
+    if not transcript:
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось распознать речь; повторите запись или отправьте текстом.",
+        )
+
+    hint_join = "\n".join(text_hints).strip()
+    combined = (f"{hint_join}\n\n{transcript}" if hint_join else transcript).strip()
+
+    new_msgs_dump = list(msgs_dump)
+    new_msgs_dump[idx] = {
+        "role": "user",
+        "content": [{"type": "text", "text": combined}],
+    }
+
+    new_body_dict = body.model_dump(mode="python")
+    new_body_dict["messages"] = new_msgs_dump
+    return ChatJsonBody.model_validate(new_body_dict)
 
 
 def merge_usage_line(line: str, prev: dict[str, Any]) -> dict[str, Any]:
@@ -346,7 +422,9 @@ def _resolve_user_for_model(
         )
     est = estimate_min_spend_rub(model, messages_for_estimate)
     if raw_messages is not None and _needs_voice_then_tts(model, raw_messages):
-        est = est * Decimal("2")
+        stt = _pick_stt_model_for_voice_input(db)
+        if stt is not None:
+            est = est + _estimate_transcribe_floor_rub(stt)
     assert_balance_covers_estimate(db, uid, est)
     return uid
 
@@ -483,7 +561,7 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
                 status_code=400,
                 detail="Загрузка аудио в чате доступна только для моделей с поддержкой речи в чате.",
             )
-        if openai_gpt_audio_style_model(model) and fmt not in ("wav", "mp3"):
+        if fmt not in ("wav", "mp3"):
             try:
                 content = reencode_audio_bytes_to_wav(content, fmt)
                 fmt = "wav"
@@ -491,14 +569,15 @@ async def _handle_multipart(request: Request) -> StreamingResponse | JSONRespons
                 raise HTTPException(
                     status_code=503,
                     detail=(
-                        "Модель GPT Audio принимает на вход только WAV или MP3; запись из браузера — WebM. "
-                        "Установите ffmpeg (https://ffmpeg.org) и добавьте его в PATH, либо приложите файл .wav / .mp3."
+                        "Запись из браузера обычно в формате WebM (Opus); провайдеры вроде Mistral принимают только WAV или MP3. "
+                        "Установите ffmpeg (https://ffmpeg.org) в PATH на сервере или добавьте его в образ; "
+                        "либо отправьте готовый .wav или .mp3."
                     ),
                 ) from None
             except RuntimeError as exc:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Не удалось перекодировать аудио в WAV для OpenAI: {exc}",
+                    detail=f"Не удалось перекодировать аудио в WAV (ffmpeg): {exc}",
                 ) from exc
         user_content = [
             {"type": "text", "text": voice_hint},
@@ -531,6 +610,11 @@ async def _handle_chat_json(
             status_code=400,
             detail="Аудио на входе доступно только для моделей с поддержкой речи в чате.",
         )
+    if _needs_voice_then_tts(model, raw_msgs):
+        # mini / OpenRouter: один streamed completion с native input_audio часто даёт отказ;
+        # сначала Whisper (STT), затем текст в чат → тот же аудиовыход через modalities.
+        body = await _gpt_audio_voice_turn_stt_then_text_body(body, user_id)
+        raw_msgs = [m.model_dump() for m in body.messages]
     has_user_input_audio = _messages_contain_input_audio(raw_msgs)
     tts_v = _normalize_tts_voice(body.tts_voice)
     payload: dict[str, Any] = {
@@ -545,9 +629,7 @@ async def _handle_chat_json(
     if model.supports_image_generation:
         payload["modalities"] = ["image", "text"]
     elif model.supports_speech and model.supports_music_generation:
-        # GPT Audio и аналоги: аудиовыход в одном запросе с input_audio (голос пользователя)
-        # у OpenAI/OpenRouter часто не поддерживается → «Provider returned error».
-        # TTS запрашиваем только когда вход без пользовательского аудио (текст в чате).
+        # GPT Audio: после голоса в multipart вопрос уже преобразован в текст (STT) — как обычный чат.
         if not has_user_input_audio:
             payload["modalities"] = ["text", "audio"]
             # При stream=true OpenAI принимает только audio.format=pcm16 (не wav).
@@ -596,68 +678,8 @@ async def _handle_chat_json(
         return JSONResponse(content=data)
 
     async def stream_with_billing() -> AsyncIterator[bytes]:
-        two_step = _needs_voice_then_tts(model, raw_msgs)
-
-        if not two_step:
-            line_carry = ""
-            state: dict[str, Any] = {}
-            try:
-                async with openrouter_async_client() as client:
-                    async with client.stream(
-                        "POST",
-                        f"{openrouter_base_url()}/chat/completions",
-                        headers=openrouter_headers(True),
-                        json=payload,
-                    ) as resp:
-                        if resp.status_code >= 400:
-                            err = await resp.aread()
-                            text = err.decode("utf-8", errors="replace")
-                            yield f"data: {text}\n\n".encode()
-                            return
-                        async for chunk in resp.aiter_bytes():
-                            yield chunk
-                            line_carry += chunk.decode("utf-8", errors="replace")
-                            parts = line_carry.split("\n")
-                            line_carry = parts.pop() if parts else ""
-                            for line in parts:
-                                state = merge_usage_line(line, state)
-                        if line_carry.strip():
-                            state = merge_usage_line(line_carry, state)
-            except httpx.RequestError as exc:
-                yield _sse_upstream_error(
-                    "Нет соединения с OpenRouter (сеть, файрвол или прокси). "
-                    "Если используется корпоративный VPN/прокси, попробуйте в .env: "
-                    "OPENROUTER_HTTPX_TRUST_ENV=false. "
-                    f"Технически: {exc}"
-                )
-                return
-
-            cost = compute_spend_rub(model, state.get("usage"))
-            if user_id:
-                with SessionLocal() as db:
-                    record_spend(
-                        db,
-                        user_id,
-                        cost,
-                        state.get("id"),
-                        f"stream {body.model_slug}",
-                    )
-            billing = json.dumps(
-                {
-                    "costRub": str(cost),
-                    "openRouterRequestId": state.get("id"),
-                    "modelSlug": body.model_slug,
-                },
-                ensure_ascii=False,
-            )
-            yield f"event: billing\ndata: {billing}\n\n".encode("utf-8")
-            return
-
-        # Два платных вызова OpenRouter: (1) ответ по входящему аудио — только текст;
-        # (2) TTS по тексту ответа (списания по usage каждого запроса, event:billing — сумма).
         line_carry = ""
-        state1: dict[str, Any] = {}
-        text_parts: list[str] = []
+        state: dict[str, Any] = {}
         try:
             async with openrouter_async_client() as client:
                 async with client.stream(
@@ -677,21 +699,9 @@ async def _handle_chat_json(
                         parts = line_carry.split("\n")
                         line_carry = parts.pop() if parts else ""
                         for line in parts:
-                            state1 = merge_usage_line(line, state1)
-                            tl = line.strip()
-                            if tl.startswith("data:"):
-                                pl = tl[5:].strip()
-                                ptxt = _content_piece_from_openrouter_sse_data(pl)
-                                if ptxt:
-                                    text_parts.append(ptxt)
+                            state = merge_usage_line(line, state)
                     if line_carry.strip():
-                        state1 = merge_usage_line(line_carry, state1)
-                        tl = line_carry.strip()
-                        if tl.startswith("data:"):
-                            pl = tl[5:].strip()
-                            ptxt = _content_piece_from_openrouter_sse_data(pl)
-                            if ptxt:
-                                text_parts.append(ptxt)
+                        state = merge_usage_line(line_carry, state)
         except httpx.RequestError as exc:
             yield _sse_upstream_error(
                 "Нет соединения с OpenRouter (сеть, файрвол или прокси). "
@@ -701,92 +711,20 @@ async def _handle_chat_json(
             )
             return
 
-        cost1 = compute_spend_rub(model, state1.get("usage"))
-        rid1 = state1.get("id")
-        if user_id and cost1 > 0:
+        cost = compute_spend_rub(model, state.get("usage"))
+        if user_id:
             with SessionLocal() as db:
                 record_spend(
                     db,
                     user_id,
-                    cost1,
-                    str(rid1) if rid1 is not None else None,
-                    f"stream {body.model_slug} voice-in",
+                    cost,
+                    state.get("id"),
+                    f"stream {body.model_slug}",
                 )
-
-        assistant_text = "".join(text_parts).strip()
-        if not assistant_text:
-            total = rub_price_ceil_2(cost1)
-            billing = json.dumps(
-                {
-                    "costRub": str(total),
-                    "openRouterRequestId": rid1,
-                    "modelSlug": body.model_slug,
-                },
-                ensure_ascii=False,
-            )
-            yield f"event: billing\ndata: {billing}\n\n".encode("utf-8")
-            return
-
-        tts_payload: dict[str, Any] = {
-            "model": body.model_slug,
-            "messages": [
-                {"role": "user", "content": _tts_second_turn_message(assistant_text)}
-            ],
-            "stream": True,
-            "modalities": ["text", "audio"],
-            "audio": {"voice": tts_v, "format": "pcm16"},
-        }
-        line_carry2 = ""
-        state2: dict[str, Any] = {}
-        try:
-            async with openrouter_async_client() as client:
-                async with client.stream(
-                    "POST",
-                    f"{openrouter_base_url()}/chat/completions",
-                    headers=openrouter_headers(True),
-                    json=tts_payload,
-                ) as resp2:
-                    if resp2.status_code >= 400:
-                        err = await resp2.aread()
-                        text = err.decode("utf-8", errors="replace")
-                        yield f"data: {text}\n\n".encode()
-                        return
-                    async for chunk in resp2.aiter_bytes():
-                        line_carry2 += chunk.decode("utf-8", errors="replace")
-                        parts_t2 = line_carry2.split("\n")
-                        line_carry2 = parts_t2.pop() if parts_t2 else ""
-                        for raw_line in parts_t2:
-                            if raw_line.strip() == "":
-                                continue
-                            state2 = merge_usage_line(raw_line, state2)
-                            yield _sse_line_redact_delta_content_for_tts_stream(raw_line)
-                    if line_carry2.strip():
-                        state2 = merge_usage_line(line_carry2, state2)
-                        yield _sse_line_redact_delta_content_for_tts_stream(line_carry2)
-        except httpx.RequestError as exc:
-            yield _sse_upstream_error(
-                "Нет соединения с OpenRouter при синтезе речи (шаг 2). "
-                f"Текст ответа уже получен. Технически: {exc}"
-            )
-            return
-
-        cost2 = compute_spend_rub(model, state2.get("usage"))
-        rid2 = state2.get("id")
-        if user_id and cost2 > 0:
-            with SessionLocal() as db:
-                record_spend(
-                    db,
-                    user_id,
-                    cost2,
-                    str(rid2) if rid2 is not None else None,
-                    f"stream {body.model_slug} tts",
-                )
-
-        total_cost = rub_price_ceil_2(cost1 + cost2)
         billing = json.dumps(
             {
-                "costRub": str(total_cost),
-                "openRouterRequestId": rid2 if rid2 is not None else rid1,
+                "costRub": str(cost),
+                "openRouterRequestId": state.get("id"),
                 "modelSlug": body.model_slug,
             },
             ensure_ascii=False,

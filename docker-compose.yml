@@ -24,6 +24,18 @@ services:
     networks:
       - web
 
+# ================= Kuma =================
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+
+    ports:
+      - "3001:3001"
+
+    volumes:
+      - ./uptime-kuma:/app/data
+
 # ================= Langflow =================
   langflow:
     image: langflowai/langflow:latest

@@ -1,4 +1,4 @@
-"""Совместимость входного аудио с OpenAI GPT Audio: только format wav|mp3; браузер шлёт webm/opus."""
+"""Перекодирование браузерного аудио (WebM и др.) в PCM WAV для API, где принимают только wav/mp3."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 def openai_gpt_audio_style_model(model: "AiModel") -> bool:
-    """Каталог помечает семейство GPT Audio как speech + music_generation."""
+    """Семейство GPT Audio в каталоге: speech + music_generation (две стадии голос→TTS и т.п.)."""
     return bool(model.supports_music_generation and model.supports_speech)
 
 

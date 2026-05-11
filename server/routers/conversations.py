@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -20,7 +22,7 @@ class CreateConversationBody(BaseModel):
 class PatchConversationBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    model_slug: str | None = Field(default=None, alias="modelSlug")
+    model_slug: Annotated[str | None, Field(default=None, alias="modelSlug")]
     title: str | None = None
     messages: list | None = None
 
