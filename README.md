@@ -178,11 +178,32 @@ UPDATE users SET is_admin = 1 WHERE id = '<uuid-пользователя>';
 
 ## API для интеграций
 
-Универсальная точка чата: `POST /api/v1/messages` (JSON или `multipart/form-data` с полем `audio` для голоса).
+Универсальная точка чата: `POST /api/v1/messages` (JSON или `multipart/form-data` с полем `audio` для голоса). В теле JSON поле **`modelSlug`** — идентификатор модели из **вашего** каталога (как во встроенном чате на сайте), а не произвольный выбор со стороны OpenRouter.
 
-Вызов «от имени сервиса» (бот, скрипт): заголовки `X-Internal-Secret: <INTERNAL_API_SECRET>` и `X-User-Id: <id пользователя в БД>`.
+### OpenAI-совместимый API (`/v1/…`) для IDE
 
-Справка по маршрутам доступна после запуска: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) (Swagger UI).
+Для клиентов в формате **OpenAI** (плагины **Cline**, **Kilo Code** / Roo Code и аналоги, скрипты с библиотекой OpenAI):
+
+| Что задаёте | Значение |
+|-------------|-----------|
+| **Base URL** (OpenAI Compatible) | `https://<ваш-домен>/v1` — без слэша в конце; клиент добавит `/chat/completions` или возьмёт список моделей с `/v1/models`. |
+| **API Key** | ключ разработчика с страницы [API для разработчиков](/docs) (строка `iip_…`). Cookie-сессия браузера для этих клиентов обычно не подходит. |
+| **Model** | **slug модели из каталога**, тот же, что в интерфейсе и в `GET /api/models`: например `openai/gpt-4o`, `google/gemini-2.5-flash`, `openrouter/free`. Полный список активных slug: `GET /v1/models` или [«Тарифы»](/tariffs). |
+
+Поведение запросов (биллинг, бесплатные модели, поток SSE, списание с баланса) совпадает с `POST /api/v1/messages`: **`model`** в теле эквивалентен **`modelSlug`**. Поля OpenAI вроде `temperature` / `max_tokens` текущая прокси **игнорирует** и не пробрасывает в OpenRouter (при необходимости их можно добавить отдельно).
+
+Пример без стрима (`curl`; подставьте свой хост и ключ):
+
+```bash
+curl -sS -X POST "https://YOUR_DOMAIN/v1/chat/completions" \
+  -H "Authorization: Bearer iip_YOUR_KEY" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d "{\"model\":\"openai/gpt-4o\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"
+```
+
+Вызов «от имени сервиса» (бот, скрипт без `iip_`): по-прежнему заголовки `X-Internal-Secret: <INTERNAL_API_SECRET>` и `X-User-Id: <id пользователя в БД>` — для маршрута `/v1/chat/completions` они тоже учитываются, как для `/api/v1/messages`.
+
+Справка по маршрутам доступна после запуска: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/swagger) (Swagger UI).
 
 ## Тарифы ₽ / 1M токенов (вход / выход)
 

@@ -163,6 +163,15 @@
         <p class="docs-lead">Базовый URL:</p>
         <pre class="docs-pre" id="docs-base-url">Загрузка…</pre>
 
+        <p class="docs-lead">
+          <strong>OpenAI-совместимый доступ</strong> для IDE-плагинов и клиентов: укажите в настройках провайдера
+          базовый URL вида <code>https://&lt;домен&gt;/v1</code> и тот же ключ <code>iip_…</code>; эндпоинты —
+          <code>POST …/v1/chat/completions</code> и <code>GET …/v1/models</code>. Поле <code>model</code> в теле должно быть
+          <strong>slug из нашего каталога</strong> (как во встроенном чате или в списке <code>/v1/models</code>), а не
+          произвольное имя: OpenRouter не выбирает модель сама по этому каналу. Дополнительные параметры запросов
+          формата OpenAI (temperature и т.д.) сейчас не пробрасываются.
+        </p>
+
         <p class="docs-lead"><strong>Авторизация</strong> — заголовок:</p>
         <pre class="docs-pre">Authorization: Bearer &lt;iip_…&gt;</pre>
         <p class="docs-note">
