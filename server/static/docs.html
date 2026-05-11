@@ -2,9 +2,12 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>API для разработчиков — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=55" />
+    <link rel="stylesheet" href="/static/css/style.css?v=56" />
     <style>
       .docs-shell {
         max-width: 44rem;
@@ -184,12 +187,14 @@
         </p>
       </section>
 
-      <section class="docs-section" id="powershell">
-        <h2>4. Пример в PowerShell</h2>
+      <section class="docs-section" id="python-example">
+        <h2>4. Пример на Python</h2>
         <p class="docs-lead">
-          В Windows тело запроса удобно передавать из файла — так JSON не ломается при кавычках:
+          Потоковый ответ (SSE) через пакет <code>requests</code> (<code>pip install requests</code>). Если нужен
+          один JSON без событий <code>data:</code>, укажите <code>"stream": false</code> и после
+          <code>raise_for_status()</code> вызовите <code>print(r.json())</code> вместо цикла по строкам.
         </p>
-        <pre class="docs-pre" id="docs-ps-example">Загрузка…</pre>
+        <pre class="docs-pre" id="docs-python-example">Загрузка…</pre>
       </section>
 
       <section class="docs-section" id="tts-voice">
@@ -235,10 +240,11 @@
           <code>GET /api/models</code> (если запрос удался), иначе — значение по умолчанию из каталога.
         </p>
         <pre class="docs-pre" id="docs-image-curl-example">Загрузка…</pre>
-        <p class="docs-lead">Тот же запрос в PowerShell:</p>
-        <pre class="docs-pre" id="docs-image-ps-example">Загрузка…</pre>
+        <p class="docs-lead">Тот же запрос на Python:</p>
+        <pre class="docs-pre" id="docs-image-python-example">Загрузка…</pre>
         <p class="docs-note">
-          Для потокового ответа укажите <code>"stream": true</code> и вызывайте с <code>curl -N</code>, как в разделе 3.
+          Для потокового ответа укажите <code>"stream": true</code> и вызывайте с <code>curl -N</code>, как в разделе 3,
+          либо обрабатывайте поток в Python, как в разделе 4.
         </p>
       </section>
     </main>
@@ -282,19 +288,39 @@
           "  }'",
         ].join("\n");
         g("#docs-curl-example").textContent = example;
-        const jsonBody =
-          '{"modelSlug":"openai/gpt-4o","stream":true,"messages":[{"role":"user","content":"Привет! Кратко опиши, что ты за модель."}]}';
-        const psExample = [
-          "$key = \"iip_YOUR_KEY\"",
-          '$json = \'' + jsonBody + "'",
-          '$p = Join-Path $PWD "req.json"',
-          "[System.IO.File]::WriteAllText($p, $json, [System.Text.UTF8Encoding]::new($false))",
-          'curl.exe -N -X POST "' + chatUrl + '" `',
-          '  -H "Authorization: Bearer $key" `',
-          '  -H "Content-Type: application/json; charset=utf-8" `',
-          "  --data-binary \"@$p\"",
+        const pyExample = [
+          "# pip install requests",
+          "",
+          "import requests",
+          "",
+          'API_KEY = "iip_YOUR_KEY"',
+          'BASE = "' + base + '"',
+          "",
+          'url = BASE + "/api/v1/messages"',
+          "payload = {",
+          '    "modelSlug": "openai/gpt-4o",',
+          '    "stream": True,',
+          '    "messages": [',
+          '        {"role": "user", "content": "Привет! Кратко опиши, что ты за модель."},',
+          "    ],",
+          "}",
+          "",
+          "with requests.post(",
+          "    url,",
+          "    headers={",
+          '        "Authorization": f"Bearer {API_KEY}",',
+          '        "Content-Type": "application/json; charset=utf-8",',
+          "    },",
+          "    json=payload,",
+          "    stream=True,",
+          "    timeout=120,",
+          ") as r:",
+          "    r.raise_for_status()",
+          "    for line in r.iter_lines():",
+          "        if line:",
+          '            print(line.decode("utf-8", errors="replace"))',
         ].join("\n");
-        g("#docs-ps-example").textContent = psExample;
+        g("#docs-python-example").textContent = pyExample;
 
         let imageSlug = "google/gemini-2.5-flash-image";
         try {
@@ -325,22 +351,38 @@
           "  }'",
         ].join("\n");
         g("#docs-image-curl-example").textContent = imageExample;
-        const imageJsonBody = JSON.stringify({
-          modelSlug: imageSlug,
-          stream: false,
-          messages: [{ role: "user", content: imagePrompt }],
-        });
-        const imagePsExample = [
-          "$key = \"iip_YOUR_KEY\"",
-          '$json = \'' + imageJsonBody + "'",
-          '$p = Join-Path $PWD "req-image.json"',
-          "[System.IO.File]::WriteAllText($p, $json, [System.Text.UTF8Encoding]::new($false))",
-          'curl.exe -X POST "' + chatUrl + '" `',
-          '  -H "Authorization: Bearer $key" `',
-          '  -H "Content-Type: application/json; charset=utf-8" `',
-          "  --data-binary \"@$p\"",
+        const imagePyExample = [
+          "# pip install requests",
+          "",
+          "import requests",
+          "",
+          'API_KEY = "iip_YOUR_KEY"',
+          'BASE = "' + base + '"',
+          "",
+          'url = BASE + "/api/v1/messages"',
+          "payload = {",
+          '    "modelSlug": "' + imageSlug + '",',
+          '    "stream": False,',
+          '    "messages": [',
+          '        {"role": "user", "content": "' +
+            imagePrompt.replace(/\\/g, "\\\\").replace(/"/g, '\\"') +
+            '" },',
+          "    ],",
+          "}",
+          "",
+          "r = requests.post(",
+          "    url,",
+          "    headers={",
+          '        "Authorization": f"Bearer {API_KEY}",',
+          '        "Content-Type": "application/json; charset=utf-8",',
+          "    },",
+          "    json=payload,",
+          "    timeout=120,",
+          ")",
+          "r.raise_for_status()",
+          "print(r.text)",
         ].join("\n");
-        g("#docs-image-ps-example").textContent = imagePsExample;
+        g("#docs-image-python-example").textContent = imagePyExample;
       }
 
       async function loadKeysUi() {

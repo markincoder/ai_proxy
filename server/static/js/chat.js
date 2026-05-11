@@ -439,10 +439,62 @@ async function main() {
   const btnVideoEl = document.getElementById("btn-video");
   const threadListEl = document.getElementById("thread-list");
   const btnNewChat = document.getElementById("btn-new-chat");
+  const chatSidebarEl = document.getElementById("chat-sidebar");
+  const chatSidebarBackdrop = document.getElementById("chat-sidebar-backdrop");
+  const btnChatSidebarOpen = document.getElementById("btn-chat-sidebar-open");
+  const btnChatSidebarClose = document.getElementById("btn-chat-sidebar-close");
+
+  const mqChatDrawer =
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(max-width: 900px)")
+      : { matches: false };
+
+  function isChatDrawerMode() {
+    return Boolean(mqChatDrawer.matches);
+  }
+
+  function setChatSidebarOpen(open) {
+    if (isGuest) return;
+    if (!chatSidebarEl) return;
+    if (!isChatDrawerMode()) {
+      document.body.classList.remove("chat-sidebar-open");
+      btnChatSidebarOpen?.setAttribute("aria-expanded", "false");
+      chatSidebarBackdrop?.setAttribute("aria-hidden", "true");
+      chatSidebarEl.removeAttribute("aria-hidden");
+      return;
+    }
+    const on = Boolean(open);
+    document.body.classList.toggle("chat-sidebar-open", on);
+    chatSidebarBackdrop?.setAttribute("aria-hidden", on ? "false" : "true");
+    btnChatSidebarOpen?.setAttribute("aria-expanded", on ? "true" : "false");
+    chatSidebarEl.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function onChatDrawerBreakpointChange() {
+    if (!isChatDrawerMode()) setChatSidebarOpen(false);
+  }
+
+  if (typeof mqChatDrawer.addEventListener === "function") {
+    mqChatDrawer.addEventListener("change", onChatDrawerBreakpointChange);
+  } else if (typeof mqChatDrawer.addListener === "function") {
+    mqChatDrawer.addListener(onChatDrawerBreakpointChange);
+  }
 
   if (isGuest) {
-    const sb = document.getElementById("chat-sidebar");
-    if (sb) sb.style.display = "none";
+    if (chatSidebarEl) chatSidebarEl.style.display = "none";
+    if (chatSidebarBackdrop) chatSidebarBackdrop.style.display = "none";
+    if (btnChatSidebarOpen) btnChatSidebarOpen.style.display = "none";
+  } else {
+    chatSidebarBackdrop?.addEventListener("click", () => setChatSidebarOpen(false));
+    btnChatSidebarOpen?.addEventListener("click", () => {
+      setChatSidebarOpen(!document.body.classList.contains("chat-sidebar-open"));
+    });
+    btnChatSidebarClose?.addEventListener("click", () => setChatSidebarOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (document.body.classList.contains("chat-sidebar-open")) setChatSidebarOpen(false);
+    });
+    setChatSidebarOpen(false);
   }
 
   if (!isGuest && cfg && cfg.yookassaEnabled && btnPay) {
@@ -862,7 +914,11 @@ async function main() {
         provEl.className = "model-card-title-provider";
         provEl.textContent = m.provider;
         titleRow.appendChild(provEl);
-        titleRow.appendChild(document.createTextNode(" · "));
+        const sepEl = document.createElement("span");
+        sepEl.className = "model-card-title-sep";
+        sepEl.setAttribute("aria-hidden", "true");
+        sepEl.textContent = " · ";
+        titleRow.appendChild(sepEl);
         const nameEl = document.createElement("span");
         nameEl.className = "model-card-title-name";
         nameEl.textContent = m.displayName;
@@ -2169,7 +2225,7 @@ async function main() {
 
   if (btnNewChat) {
     btnNewChat.addEventListener("click", () => {
-      void newChat();
+      void newChat().finally(() => setChatSidebarOpen(false));
     });
   }
   if (threadListEl) {
@@ -2177,7 +2233,11 @@ async function main() {
       const btn = e.target.closest(".sidebar-thread-item");
       if (!btn || !threadListEl.contains(btn)) return;
       const id = btn.dataset.threadId;
-      if (id && id !== currentConversationId) void openThread(id);
+      if (id && id !== currentConversationId) {
+        void openThread(id).finally(() => setChatSidebarOpen(false));
+      } else if (id) {
+        setChatSidebarOpen(false);
+      }
     });
   }
 

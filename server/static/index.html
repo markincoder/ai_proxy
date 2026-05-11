@@ -2,10 +2,13 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>Чат — II Proxy</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/style.css?v=48" />
+    <link rel="stylesheet" href="/static/css/style.css?v=59" />
     <link
       rel="stylesheet"
       href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
@@ -18,7 +21,27 @@
     <script src="/static/js/site-header.js?v=3" defer></script>
 
     <div class="app-layout">
-      <aside class="chat-sidebar" id="chat-sidebar" aria-label="История чатов">
+      <div
+        class="chat-sidebar-backdrop"
+        id="chat-sidebar-backdrop"
+        aria-hidden="true"
+      ></div>
+      <aside
+        class="chat-sidebar"
+        id="chat-sidebar"
+        aria-label="История чатов"
+      >
+        <div class="chat-sidebar-header">
+          <span class="chat-sidebar-header-title">История</span>
+          <button
+            type="button"
+            class="chat-sidebar-close"
+            id="btn-chat-sidebar-close"
+            aria-label="Закрыть панель"
+          >
+            ×
+          </button>
+        </div>
         <button type="button" class="sidebar-new-chat" id="btn-new-chat">
           <span class="sidebar-new-icon" aria-hidden="true">✎</span>
           Новый чат
@@ -28,7 +51,19 @@
       </aside>
       <div class="app-main-column">
         <main class="main-shell main-shell--chat">
-          <h1 class="page-title">Чат с нейросетями</h1>
+          <div class="page-chat-title-row">
+            <button
+              type="button"
+              class="chat-sidebar-toggle"
+              id="btn-chat-sidebar-open"
+              aria-label="Открыть историю чатов"
+              aria-expanded="false"
+              aria-controls="chat-sidebar"
+            >
+              <span aria-hidden="true">☰</span>
+            </button>
+            <h1 class="page-title">Чат с нейросетями</h1>
+          </div>
 
           <div class="chat-shell">
             <div
@@ -52,7 +87,13 @@
               </div>
             </div>
             <form id="chat-form" class="composer" autocomplete="off">
-              <input type="text" id="msg-input" placeholder="Напишите сообщение…" />
+              <input
+                type="text"
+                id="msg-input"
+                placeholder="Напишите сообщение…"
+                enterkeyhint="send"
+                autocomplete="off"
+              />
               <input
                 type="file"
                 id="file-input"
@@ -89,10 +130,6 @@
             </p>
             <p id="video-mode-hint" class="hint footer-hint" style="display: none">
               Провайдер может отклонить и <strong>нейтральный</strong> запрос (политика контента, ложные срабатывания). Смените формулировку сцены или другую видео-модель.
-            </p>
-            <p class="hint footer-hint">
-              Бесплатные модели работают без входа; для платных нужен аккаунт и баланс. История чатов — после
-              входа.
             </p>
           </section>
         </main>
@@ -183,7 +220,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/js/app-nav.js?v=2" defer></script>
-    <script type="module" src="/static/js/chat.js?v=78"></script>
+    <script type="module" src="/static/js/chat.js?v=80"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

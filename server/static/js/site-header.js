@@ -39,7 +39,7 @@
     root.outerHTML = `<header class="top-nav" role="navigation" aria-label="Главное меню">
       <a href="/" class="brand">
         <span class="brand-mark" aria-hidden="true">II</span>
-        <span>II Proxy</span>
+        <span>Proxy</span>
       </a>
       <nav class="nav-links">${linksHtml}</nav>
       <div class="nav-actions">
