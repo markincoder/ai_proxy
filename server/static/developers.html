@@ -218,7 +218,13 @@
                 <li><a href="#sec-examples-python" class="dev-toc-link">Python</a></li>
               </ul>
             </li>
-            <li><a href="#sec-vibe" class="dev-toc-link">Vibe coding</a></li>
+            <li>
+              <a href="#sec-vibe" class="dev-toc-link">Vibe coding</a>
+              <ul class="dev-toc-sub">
+                <li><a href="#sec-vibe-kilo" class="dev-toc-link">Kilo Code</a></li>
+                <li><a href="#sec-vibe-cline" class="dev-toc-link">Cline</a></li>
+              </ul>
+            </li>
             <li><a href="#sec-embeddings" class="dev-toc-link">Embeddings</a></li>
             <li><a href="#sec-more" class="dev-toc-link">Озвучка и изображения</a></li>
           </ul>
@@ -236,7 +242,7 @@
           (например, <code>openai/gpt-4o</code>).
         </p>
         <p class="docs-lead">
-          Актульные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>.
+          Актуальные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>.
         </p>
       </section>
 
@@ -322,28 +328,67 @@
       <section class="docs-section" id="sec-vibe">
         <h2>Vibe coding</h2>
         <p class="docs-lead">
-          Подключите «пользовательский OpenAI / OpenAI-compatible» провайдер: в настройках плагина укажите
-          <strong>Base URL</strong> <em>ровно</em> как в блоке ниже (без закрывающего <code>/</code>) и
-          <strong>API Key</strong> — ваш <code>iip_…</code> (<a href="#sec-keys">ключи доступа</a>).
+          Вайб-кодинг — когда вы формулируете задачу на естественном языке, а агент в IDE сам предлагает правки
+          (diff), запускает команды и ведёт диалог в чате. Для этого подходят расширения с профилем
+          <strong>OpenAI-compatible</strong>: ниже — настройка на примере <strong>Kilo Code</strong> и
+          <strong>Cline</strong> (аналогично работают Roo Code и другие плагины с тем же протоколом).
+        </p>
+        <p class="docs-lead">
+          В настройках провайдера укажите <strong>Base URL</strong> <em>ровно</em> как в блоке ниже (без хвоста
+          <code>/chat/completions</code> и без лишнего <code>/</code> в конце) и <strong>API Key</strong> — ваш
+          <code>iip_…</code> (<a href="#sec-keys">ключи доступа</a>).
         </p>
         <pre class="docs-pre" id="dev-vibe-base-instruction">Загрузка…</pre>
 
-        <p class="docs-lead">
-          <strong>Cursor:</strong> <em>Settings → Models → API Keys / OpenAI</em> или раздел добавления пользовательской
-          модели — найдите поле вроде «Override OpenAI Base URL», «Custom OpenAI-compatible endpoint» и вставьте строку из
-          блока выше (оканчивается на <code>/v1</code>).
-        </p>
-        <p class="docs-lead">
-          <strong>Cline / Kilo Code, Roo Code:</strong> профиль провайдера «OpenAI» / «OpenAI-compatible» —
-          базовый URL без суффикса <code>/chat/completions</code>. Имя модели — slug из каталога (как в чате на сайте);
-          подсказку можно взять из того, что IDE запрашивает сама — <code>GET /v1/models</code> с тем же ключом.
-        </p>
+        <div class="dev-subsection" id="sec-vibe-kilo">
+          <p></p>
+          <h3>Kilo Code</h3>
+          <p class="docs-lead">
+            Установите расширение из маркетплейса VS Code (или аналог для поддерживаемой IDE). Откройте панель Kilo
+            Code → <strong>шестерёнка</strong> → раздел <strong>«Провайдеры»</strong> → внизу
+            <strong>«Пользовательский провайдер»</strong> → <strong>«Подключить»</strong>.
+          </p>
+          <p class="docs-lead">
+            Заполните поля: короткий <strong>ID провайдера</strong> латиницей (например <code>iiproxy</code>),
+            <strong>отображаемое имя</strong> на ваш вкус, <strong>базовый URL</strong> — строка из блока выше,
+            <strong>API-ключ</strong> — <code>iip_…</code>. Затем <strong>добавьте модель</strong>:
+            в <strong>model-id</strong> вставьте slug из <a href="/tariffs">«Тарифов»</a> (тот же id, что в
+            <code>GET /api/models</code>), в «отображаемое имя» — удобное название для списка в чате.
+          </p>
+          <p class="docs-lead">
+            После сохранения внизу чата Kilo Code должен появиться выбранный провайдер и модель. Для дисциплины ответов
+            можно завести правила в файле проекта (см. документацию Kilo Code) — например стиль кода и как запускать
+            команды в вашем окружении.
+          </p>
+        </div>
+
+        <div class="dev-subsection" id="sec-vibe-cline">
+          <h3>Cline</h3>
+          <p class="docs-lead">
+            Установите Cline из маркетплейса. При первом запуске выберите вариант вроде
+            <strong>«Bring my own API key»</strong> / свой ключ.
+          </p>
+          <p class="docs-lead">
+            <strong>API Provider:</strong> <strong>OpenAI Compatible</strong>. Укажите
+            <strong>Base URL</strong> из блока выше, <strong>API Key</strong> — <code>iip_…</code>,
+            <strong>Model ID</strong> — slug модели целиком (например <code>openai/gpt-4o</code>), как в
+            <a href="/tariffs">«Тарифах»</a>. Правила проекта можно задать через интерфейс Cline (иконка весов в чате)
+            или файлы вроде <code>.clinerules</code> — см. документацию расширения.
+          </p>
+          <p class="docs-note">
+            Агенты расходуют много контекста: по завершении крупной задачи начинайте <strong>новый чат / задачу</strong>,
+            чтобы не пересылать лишнюю историю при каждом запросе.
+          </p>
+        </div>
 
         <p class="docs-lead">
-          Список моделей для чата и цены в ₽ за 1&nbsp;млн токенов — на странице <a href="/tariffs">«Тарифы»</a> и в выпадающем списке
-          модели на <a href="/">главной</a> после входа. Для машиночитаемого каталога: <code>GET /api/models</code>.
+          Каталог чат-моделей и цены — <a href="/tariffs">«Тарифы»</a> и выпадающий список на
+          <a href="/">главной</a> после входа; JSON для интеграций — <code>GET /api/models</code>. Проверка API:
+          с тем же ключом должен открываться <code>GET …/v1/models</code> (см. раздел «Примеры» и curl к
+          <code>/api/models</code>).
         </p>
       </section>
+
 
       <section class="docs-section" id="sec-embeddings">
         <h2>Embeddings</h2>
@@ -435,7 +480,8 @@
 
         if (sel("dev-vibe-base-instruction"))
           sel("dev-vibe-base-instruction").textContent =
-            openaiRoot + "\n\n(Скопируйте целиком в поле Base URL / Override OpenAI API в вашем редакторе.)";
+            openaiRoot +
+            "\n\n(Вставьте в поле Base URL / API base провайдера OpenAI-compatible в Kilo Code, Cline и аналогах — без /chat/completions.)";
 
         if (sel("docs-emb-curl-example"))
           sel("docs-emb-curl-example").textContent =
@@ -650,6 +696,8 @@
           "sec-examples",
           "sec-examples-python",
           "sec-vibe",
+          "sec-vibe-kilo",
+          "sec-vibe-cline",
           "sec-embeddings",
           "sec-more",
         ];

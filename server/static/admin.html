@@ -209,6 +209,27 @@
       .admin-support-reply textarea {
         min-height: 5rem;
       }
+      .admin-pricing-factor-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.75rem;
+      }
+      .admin-pricing-factor-fields {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.75rem;
+      }
+      .admin-pricing-factor-fields > .admin-field {
+        margin-bottom: 0;
+      }
+      .admin-pricing-factor-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
       .admin-search-row {
         display: flex;
         flex-wrap: wrap;
@@ -268,6 +289,28 @@
 
         <section id="panel-models" class="admin-panel">
           <div id="models-err" class="err" style="display: none"></div>
+          <div
+            style="margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface)"
+          >
+            <div id="pricing-factors-msg" style="font-size: 0.82rem; color: var(--muted); margin-bottom: 0.5rem"></div>
+            <div class="admin-pricing-factor-row">
+              <div class="admin-pricing-factor-fields">
+                <div class="admin-field" style="max-width: 13rem">
+                  <label for="pf-usd">Курс USD, ₽ за $1</label>
+                  <input type="text" inputmode="decimal" id="pf-usd" placeholder="Например 100" autocomplete="off" />
+                </div>
+                <div class="admin-field" style="max-width: 12rem">
+                  <label for="pf-mult">Коэф. прибыли</label>
+                  <input type="text" inputmode="decimal" id="pf-mult" placeholder="Например 3" autocomplete="off" />
+                </div>
+              </div>
+              <div class="admin-pricing-factor-actions">
+                <button type="button" class="btn btn-primary" id="btn-pricing-factors-apply">Применить</button>
+                <button type="button" class="btn" id="btn-catalog-openrouter-check">Проверить каталог</button>
+              </div>
+            </div>
+            <p id="pricing-factors-err" class="err" style="display: none; margin-top: 0.5rem"></p>
+          </div>
           <div class="admin-table-wrap">
             <table class="admin-table" id="models-table">
               <thead>
@@ -651,6 +694,18 @@
       </div>
     </dialog>
 
+    <dialog class="admin-modal" id="catalog-check-dialog" aria-labelledby="catalog-check-title">
+      <div class="admin-modal-inner">
+        <h2 id="catalog-check-title">Каталог vs OpenRouter</h2>
+        <p id="catalog-check-summary" class="page-lead" style="font-size: 0.88rem; margin: 0 0 0.85rem"></p>
+        <pre class="admin-thread-pre" id="catalog-check-body" style="max-height: 14rem; overflow: auto; margin: 0 0 1rem; white-space: pre-wrap"></pre>
+        <div class="admin-actions" style="flex-wrap: wrap; gap: 0.5rem">
+          <button type="button" class="btn btn-primary" id="catalog-check-run-apply">Пересчитать тарифы</button>
+          <button type="button" class="btn" id="catalog-check-cancel">Позже</button>
+        </div>
+      </div>
+    </dialog>
+
     <footer class="site-footer">II Proxy · Админка</footer>
 
     <script>
@@ -660,6 +715,23 @@
         const d = document.createElement("div");
         d.textContent = s == null ? "" : String(s);
         return d.innerHTML;
+      }
+
+      function switchAdminTab(tab) {
+        document.querySelectorAll(".admin-tab").forEach((b) => {
+          b.classList.toggle("admin-tab--active", b.dataset.tab === tab);
+        });
+        document.getElementById("panel-models").hidden = tab !== "models";
+        document.getElementById("panel-users").hidden = tab !== "users";
+        document.getElementById("panel-support").hidden = tab !== "support";
+        document.getElementById("panel-moderation").hidden = tab !== "moderation";
+        document.getElementById("panel-banner").hidden = tab !== "banner";
+        document.getElementById("panel-news").hidden = tab !== "news";
+        document.getElementById("panel-errors").hidden = tab !== "errors";
+        document.getElementById("panel-db").hidden = tab !== "db";
+        if (tab === "errors") loadErrorLogs();
+        if (tab === "news") loadNews();
+        if (tab === "support") loadSupportTickets();
       }
 
       let modelsCache = [];
@@ -1124,7 +1196,35 @@
       async function loadModels() {
         const err = document.getElementById("models-err");
         err.style.display = "none";
-        const r = await api("/api/admin/models");
+        const [rPf, r] = await Promise.all([
+          api("/api/admin/pricing-factors"),
+          api("/api/admin/models"),
+        ]);
+        if (!rPf.ok) {
+          const pe = document.getElementById("pricing-factors-err");
+          if (pe) {
+            pe.textContent = "Не удалось загрузить параметры курса";
+            pe.style.display = "block";
+          }
+        } else {
+          const j = await rPf.json();
+          const msg = document.getElementById("pricing-factors-msg");
+          const pfe = document.getElementById("pricing-factors-err");
+          if (pfe) {
+            pfe.style.display = "none";
+            pfe.textContent = "";
+          }
+          const usdEl = document.getElementById("pf-usd");
+          const mulEl = document.getElementById("pf-mult");
+          if (usdEl) usdEl.value = j.usdRub != null ? String(j.usdRub) : "";
+          if (mulEl) mulEl.value = j.markupMult != null ? String(j.markupMult) : "";
+          if (msg) {
+            msg.textContent =
+              j.source === "database"
+                ? "Источник: сохранённые в БД значения (после «Применить»)."
+                : `Источник: .env (OPENROUTER_USD_RUB=${j.envUsdRub}, PRICING_MARKUP_MULT=${j.envMarkupMult}).`;
+          }
+        }
         if (!r.ok) {
           err.textContent = "Не удалось загрузить модели";
           err.style.display = "block";
@@ -1145,6 +1245,127 @@
           })
           .join("");
       }
+
+      async function postPricingFactorsApply() {
+        const pe = document.getElementById("pricing-factors-err");
+        if (pe) {
+          pe.style.display = "none";
+          pe.textContent = "";
+        }
+        const usdRub = document.getElementById("pf-usd").value.trim().replace(",", ".");
+        const markupMult = document.getElementById("pf-mult").value.trim().replace(",", ".");
+        if (!usdRub || !markupMult) {
+          if (pe) {
+            pe.textContent = "Укажите курс и коэффициент";
+            pe.style.display = "block";
+          }
+          return { ok: false };
+        }
+        const rsp = await api("/api/admin/pricing-factors/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usdRub, markupMult }),
+        });
+        if (!rsp.ok) {
+          let t = "Не удалось применить";
+          try {
+            const j = await rsp.json();
+            t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+          } catch {
+            t = await rsp.text();
+          }
+          if (pe) {
+            pe.textContent = t;
+            pe.style.display = "block";
+          }
+          return { ok: false };
+        }
+        await loadModels();
+        return { ok: true };
+      }
+
+      async function confirmAndApplyPricingFactors() {
+        if (
+          !confirm(
+            "Запросить актуальные USD-цены у OpenRouter и пересчитать каталог в ₽ с указанным курсом и коэффициентом? Сохранённые ставки в базе для чат-моделей из JSON будут заменены.",
+          )
+        )
+          return false;
+        const r = await postPricingFactorsApply();
+        return r.ok;
+      }
+
+      document.getElementById("btn-pricing-factors-apply").addEventListener("click", () => {
+        void confirmAndApplyPricingFactors();
+      });
+
+      const catalogCheckDialog = document.getElementById("catalog-check-dialog");
+      let catalogCheckLastAligned = false;
+
+      document.getElementById("btn-catalog-openrouter-check").addEventListener("click", async () => {
+        const sum = document.getElementById("catalog-check-summary");
+        const bodyEl = document.getElementById("catalog-check-body");
+        sum.textContent = "Проверка…";
+        bodyEl.textContent = "";
+        catalogCheckDialog.showModal();
+        try {
+          const r = await api("/api/admin/catalog/openrouter-check");
+          if (!r.ok) {
+            let t = "Не удалось проверить";
+            try {
+              const j = await r.json();
+              t = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j);
+            } catch {
+              t = await r.text();
+            }
+            sum.textContent = t;
+            catalogCheckLastAligned = false;
+            return;
+          }
+          const data = await r.json();
+          catalogCheckLastAligned = !!data.catalogLooksAligned;
+          const cmChat =
+            data.chatCatalog?.slugsMissingOnPublicModelsEndpoint ||
+            data.chatCatalog?.slugsMissingOnOpenRouter ||
+            [];
+          const cmEmb =
+            data.embeddingsCatalog?.slugsMissingOnPublicModelsEndpoint ||
+            data.embeddingsCatalog?.slugsMissingOnOpenRouter ||
+            [];
+          const embNote = data.embeddingsCatalog?.noteRu || "";
+          sum.textContent = data.catalogLooksAligned
+            ? "Чат-каталог совпадает с id из GET …/models OpenRouter. По эмбеддингам см. пояснение в тексте ниже."
+            : "Не все slug чат-каталога есть среди id из GET …/models — перепроверьте список ниже. Эмбеддинги там часто не перечислены.";
+          let blob = "";
+          blob += `Всего id в ответе OpenRouter GET …/models: ${data.openRouterSlugCount}\n\n`;
+          blob += `Чат (${data.chatCatalog?.slugsCompared ?? "?"} slug): нет среди этих id (${cmChat.length})\n`;
+          blob += cmChat.length ? cmChat.map((x) => "  - " + x).join("\n") + "\n" : "  (нет)\n";
+          blob += `\nЭмбеддинги (${data.embeddingsCatalog?.slugsCompared ?? "?"} slug): нет среди этих id (${cmEmb.length})\n`;
+          blob +=
+            "(это само по себе не значит, что моделей нет на OpenRouter для Embeddings API).\n";
+          blob += cmEmb.length ? cmEmb.map((x) => "  - " + x).join("\n") + "\n" : "  (нет)\n";
+          if (embNote.trim()) blob += `\n---\n${embNote.trim()}\n`;
+          bodyEl.textContent = blob;
+        } catch (e) {
+          sum.textContent = "Ошибка: " + (e?.message || String(e));
+          catalogCheckLastAligned = false;
+        }
+      });
+
+      document.getElementById("catalog-check-cancel").addEventListener("click", () => {
+        catalogCheckDialog.close();
+      });
+
+      document.getElementById("catalog-check-run-apply").addEventListener("click", async () => {
+        let msg =
+          "Запросить актуальные USD-цены у OpenRouter и пересчитать каталог в ₽ с указанным курсом и коэффициентом? Сохранённые ставки в базе для чат-моделей из JSON будут заменены.";
+        if (!catalogCheckLastAligned) {
+          msg = "Каталог не полностью совпал с OpenRouter (см. список). " + msg;
+        }
+        if (!confirm(msg)) return;
+        const result = await postPricingFactorsApply();
+        if (result.ok) catalogCheckDialog.close();
+      });
 
       document.getElementById("models-tbody").addEventListener("click", (e) => {
         const b = e.target.closest("button[data-edit]");
@@ -1543,23 +1764,7 @@
       });
 
       document.querySelectorAll(".admin-tab").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const tab = btn.dataset.tab;
-          document.querySelectorAll(".admin-tab").forEach((b) => {
-            b.classList.toggle("admin-tab--active", b.dataset.tab === tab);
-          });
-          document.getElementById("panel-models").hidden = tab !== "models";
-          document.getElementById("panel-users").hidden = tab !== "users";
-          document.getElementById("panel-support").hidden = tab !== "support";
-          document.getElementById("panel-moderation").hidden = tab !== "moderation";
-          document.getElementById("panel-banner").hidden = tab !== "banner";
-          document.getElementById("panel-news").hidden = tab !== "news";
-          document.getElementById("panel-errors").hidden = tab !== "errors";
-          document.getElementById("panel-db").hidden = tab !== "db";
-          if (tab === "errors") loadErrorLogs();
-          if (tab === "news") loadNews();
-          if (tab === "support") loadSupportTickets();
-        });
+        btn.addEventListener("click", () => switchAdminTab(btn.dataset.tab));
       });
 
       (async () => {

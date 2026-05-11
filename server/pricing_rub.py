@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import ROUND_CEILING, Decimal
 from typing import Any
 
-from .config import get_settings
+from .pricing_factors import resolve_usd_rub_markup
 
 _RUB_TWO = Decimal("0.01")
 
@@ -18,23 +18,11 @@ def rub_price_ceil_2(amount: Decimal | str | Any) -> Decimal:
 
 def openrouter_usd_to_balance_rub(usd: Any) -> Decimal:
     """
-    Формула как в scripts/sync_openrouter_prices.py для цен моделей:
-    USD × OPENROUTER_USD_RUB × PRICING_MARKUP_MULT.
+    USD × курс × коэффициент: как для каталога; значения берутся из БД (админка «Модели»)
+    или из OPENROUTER_USD_RUB / PRICING_MARKUP_MULT в .env.
 
     Используется для usage.cost (чат/транскрипция) и стоимости видео.
     """
-    s = get_settings()
-    try:
-        rate = Decimal(str(s.openrouter_usd_rub).strip() or "100")
-    except Exception:
-        rate = Decimal("100")
-    try:
-        mult = Decimal(str(s.pricing_markup_mult).strip() or "1")
-    except Exception:
-        mult = Decimal("1")
-    if rate <= 0:
-        rate = Decimal("100")
-    if mult <= 0:
-        mult = Decimal("1")
+    rate, mult = resolve_usd_rub_markup()
     raw = Decimal(str(usd)) * rate * mult
     return rub_price_ceil_2(raw)

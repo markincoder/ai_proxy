@@ -8,7 +8,7 @@
     />
     <title>Чат — II Proxy</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/style.css?v=59" />
+    <link rel="stylesheet" href="/static/css/style.css?v=61" />
     <link
       rel="stylesheet"
       href="https://yookassa.ru/integration/simplepay/css/yookassa_construct_form.css?v=1.34.0"
@@ -49,6 +49,15 @@
         <div class="sidebar-section-label">Недавние</div>
         <ul class="sidebar-thread-list" id="thread-list" role="list"></ul>
       </aside>
+      <div
+        class="chat-sidebar-resizer"
+        id="chat-sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Граница между историей и чатом. Перетащите или используйте стрелки влево и вправо."
+        tabindex="0"
+        hidden
+      ></div>
       <div class="app-main-column">
         <main class="main-shell main-shell--chat">
           <div class="page-chat-title-row">
@@ -159,6 +168,13 @@
           ×
         </button>
         <h2 id="pay-modal-title" class="pay-modal__title">Пополнение баланса</h2>
+        <div class="pay-modal__usage-note" aria-label="Модель оплаты">
+          <p class="pay-modal__usage-note-title">Платите только за использование</p>
+          <p class="pay-modal__usage-note-text">
+            Никаких подписок, месячных пакетов и абонементов — вы пополняете баланс и тратите его только на реальные
+            запросы к моделям по тарифам в разделе «Все модели и тарифы».
+          </p>
+        </div>
         <p id="pay-modal-err" class="pay-modal__err" style="display: none"></p>
         <form
           id="yookassa-simple-form"
@@ -220,7 +236,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/js/app-nav.js?v=2" defer></script>
-    <script type="module" src="/static/js/chat.js?v=80"></script>
+    <script type="module" src="/static/js/chat.js?v=82"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

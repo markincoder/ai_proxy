@@ -157,6 +157,20 @@ class SiteBanner(Base):
     schedule_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class SitePricingFactors(Base):
+    """
+    Активные коэффициенты USD→₽ для каталога и биллинга (строка id=1).
+    Если строки нет или поля NULL — используются OPENROUTER_USD_RUB и PRICING_MARKUP_MULT из окружения.
+    """
+
+    __tablename__ = "site_pricing_factors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usd_rub: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    markup_mult: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ErrorLog(Base):
     """Неперехваченные исключения HTTP-запросов для просмотра админом."""
 

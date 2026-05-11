@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .config import REPO_ROOT, get_settings
 from . import models as _models  # noqa: F401 — регистрация таблиц в Base.metadata
-from .models import AiModel, Base, ChatThread, SiteBanner, User
+from .models import AiModel, Base, SiteBanner, User
 
 
 def _catalog_specs_path() -> Path:
@@ -65,9 +65,9 @@ def _purge_models_not_in_catalog(db: Session, spec_slugs: set[str]) -> None:
     """
     Удаляет из ai_models записи, slug которых нет в объединённом каталоге (чат + эмбеддинги).
     Плюс slug из REMOVED_OPENROUTER_SLUGS — явное исключение без правки репозитория.
-    Чаты с удалённой моделью перепривязываются на THREAD_MODEL_FALLBACK_SLUG.
+    Диалоги (chat_threads) не меняем: исторический model_slug сохраняется для отображения;
+    активная модель для ответов выбирается на клиенте из текущего каталога.
     """
-    fb = get_settings().thread_model_fallback_slug
     env_rm = _env_removed_slugs()
     rows = db.query(AiModel).all()
     db_slugs = {r.slug for r in rows}
@@ -81,11 +81,6 @@ def _purge_models_not_in_catalog(db: Session, spec_slugs: set[str]) -> None:
         db.query(User)
         .filter(User.last_chat_model_slug.in_(to_remove))
         .update({User.last_chat_model_slug: None}, synchronize_session=False)
-    )
-    (
-        db.query(ChatThread)
-        .filter(ChatThread.model_slug.in_(to_remove))
-        .update({ChatThread.model_slug: fb}, synchronize_session=False)
     )
 
 

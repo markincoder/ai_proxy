@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=56" />
+    <link rel="stylesheet" href="/static/css/style.css?v=60" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
@@ -18,23 +18,11 @@
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
 
-      <aside class="tariffs-promo" aria-label="Условия оплаты">
-        <p class="tariffs-promo__title">Платите только за использование</p>
-        <p class="tariffs-promo__text">
-          Никаких подписок, месячных пакетов и абонементов — вы пополняете баланс и тратите его только на реальные
-          запросы к моделям по указанным ниже тарифам.
-        </p>
+      <aside class="tariffs-promo" aria-label="Пояснения по тарификации">
         <p class="tariffs-promo__text">
           <strong>Про токены:</strong> в текстовых моделях цены — за <strong>1 млн токенов</strong> (вход и выход вместе).
           Простой ориентир для <strong>русского</strong> текста: <strong>1 млн токенов ≈ 300–500 тыс. слов</strong> (зависит от
           текста; для картинок, видео и аудио смотрите единицы в карточке модели).
-        </p>
-        <p class="tariffs-promo__text">
-          <strong>Попробовать в чате:</strong> откройте <a href="/">главную страницу</a> — там выбор модели и диалог
-          (нужен вход и баланс или бесплатная модель).
-          <strong>Vibe coding и эмбеддинги:</strong> отдельная страница
-          <a href="/developers">«Разработчикам»</a> со списком slug для IDE и запросов
-          <code>/v1/embeddings</code>. Ключ и примеры — <a href="/developers">«Разработчикам»</a>.
         </p>
       </aside>
 
@@ -58,12 +46,12 @@
       const MODEL_GROUPS = [
         { id: "free", emoji: "🎁", title: "Бесплатные" },
         { id: "text", emoji: "💬", title: "Текст и чат" },
-        { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
         { id: "image", emoji: "🖼", title: "Изображения в чате" },
         { id: "video", emoji: "🎬", title: "Видео" },
         { id: "transcription", emoji: "📝", title: "Транскрипция" },
         { id: "speech", emoji: "🎙️", title: "Речь в чате" },
         { id: "music", emoji: "🎵", title: "Музыка" },
+        { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
       ];
 
       function modelGroupId(m) {
@@ -427,16 +415,7 @@
             if (a && panelsRoot.contains(a)) {
               const id = a.dataset.modelId;
               rememberModelChoice(id);
-              return;
             }
-            const art = e.target.closest("article.tariff-card");
-            if (!art || !panelsRoot.contains(art)) return;
-            const link = art.querySelector("a.tariff-open-chat");
-            if (!link) return;
-            e.preventDefault();
-            const id = link.dataset.modelId;
-            rememberModelChoice(id);
-            location.href = link.href;
           });
         })
         .catch((e) => {

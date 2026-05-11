@@ -1574,7 +1574,7 @@ select.settings-select {
 }
 
 .chat-sidebar {
-  width: 17rem;
+  width: var(--chat-sidebar-width, 17rem);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1582,6 +1582,45 @@ select.settings-select {
   padding: 0.75rem 0.6rem 1rem;
   background: rgba(255, 255, 255, 0.75);
   border-right: 1px solid var(--border);
+}
+
+.chat-sidebar-resizer {
+  display: none;
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0;
+  padding: 0;
+  align-self: stretch;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.chat-sidebar-resizer:hover {
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.chat-sidebar-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chat-sidebar-resizer.is-dragging {
+  background: rgba(148, 163, 184, 0.35);
+}
+
+@media (min-width: 901px) {
+  .chat-sidebar-resizer:not([hidden]) {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  .chat-sidebar-resizer {
+    display: none !important;
+  }
 }
 
 .sidebar-new-chat {
@@ -2410,7 +2449,6 @@ select.settings-select {
   flex-direction: column;
   gap: 0.45rem;
   margin: 0;
-  cursor: pointer;
 }
 
 /* Иначе .tariff-card { display: flex } перекрывает UA [hidden] и фильтр на странице тарифов не скрывает карточки */
@@ -2570,6 +2608,25 @@ article.tariff-card[hidden] {
   font-size: 1.125rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.pay-modal__usage-note {
+  margin: 0 0 1rem;
+}
+
+.pay-modal__usage-note-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.015em;
+}
+
+.pay-modal__usage-note-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .pay-modal__hint {

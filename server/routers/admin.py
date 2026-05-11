@@ -1,16 +1,17 @@
 import json
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..database import engine, run_vacuum_and_analyze
+from ..database import engine, get_default_model_specs, run_vacuum_and_analyze
 from ..deps import get_db, require_admin
 from ..models import (
     AiModel,
@@ -18,9 +19,16 @@ from ..models import (
     ErrorLog,
     NewsPost,
     SiteBanner,
+    SitePricingFactors,
     SupportMessage,
     SupportTicket,
     User,
+)
+from ..openrouter_price_sync import sync_chat_model_prices_to_db
+from ..pricing_factors import (
+    effective_factors_from_session,
+    environment_usd_rub_markup,
+    pricing_factors_source_from_session,
 )
 
 
@@ -40,6 +48,13 @@ _NEWS_UPLOAD_TYPES: dict[str, str] = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+
+_ADMIN_DISPLAY_MONEY_Q = Decimal("0.01")
+
+
+def _admin_display_money(val: Decimal) -> str:
+    """Для UI админки: две десятичные цифры (₽, курс, коэф.)."""
+    return str(Decimal(str(val)).quantize(_ADMIN_DISPLAY_MONEY_Q, rounding=ROUND_HALF_UP))
 
 
 def _delete_news_upload_file_if_ours(image_url: Optional[str]) -> None:
@@ -107,9 +122,9 @@ def _serialize_model(m: AiModel) -> dict:
         "slug": m.slug,
         "displayName": m.display_name,
         "provider": m.provider,
-        "inputPricePerMn": str(m.input_price_per_mn),
-        "outputPricePerMn": str(m.output_price_per_mn),
-        "fixedPrice": str(m.fixed_price) if m.fixed_price is not None else None,
+        "inputPricePerMn": _admin_display_money(m.input_price_per_mn),
+        "outputPricePerMn": _admin_display_money(m.output_price_per_mn),
+        "fixedPrice": _admin_display_money(m.fixed_price) if m.fixed_price is not None else None,
         "isActive": m.is_active,
         "supportsVision": m.supports_vision,
         "supportsImageGeneration": m.supports_image_generation,
@@ -148,7 +163,7 @@ def admin_list_users(
         {
             "id": u.id,
             "username": u.username,
-            "balance": str(u.balance),
+            "balance": _admin_display_money(u.balance),
             "vkUserId": u.vk_user_id,
             "yandexUserId": u.yandex_user_id,
             "isAdmin": u.is_admin == 1,
@@ -206,6 +221,129 @@ def admin_patch_model(
     db.commit()
     db.refresh(row)
     return _serialize_model(row)
+
+
+@router.get("/pricing-factors")
+def admin_get_pricing_factors(_: str = Depends(require_admin), db: Session = Depends(get_db)):
+    env_r, env_m = environment_usd_rub_markup()
+    eff_r, eff_m = effective_factors_from_session(db)
+    return {
+        "usdRub": _admin_display_money(eff_r),
+        "markupMult": _admin_display_money(eff_m),
+        "source": pricing_factors_source_from_session(db),
+        "envUsdRub": _admin_display_money(env_r),
+        "envMarkupMult": _admin_display_money(env_m),
+    }
+
+
+class AdminPricingFactorsApply(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    usd_rub: Decimal = Field(..., alias="usdRub", gt=0)
+    markup_mult: Decimal = Field(..., alias="markupMult", gt=0)
+
+
+@router.post("/pricing-factors/apply")
+def admin_apply_pricing_factors(
+    body: AdminPricingFactorsApply,
+    _: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Пересчёт: GET OpenRouter → ₽ для slug, где в API есть актуальные цены.
+    Slug, которых **нет** в ответе `/models`, переводятся на новую наценку умножением хранимых ₽ на то же отношение;
+    модели только эмбеддингов — тем же множителем. Сохраняются курс и коэффициент для USD-биллинга.
+    """
+    new_r = body.usd_rub
+    new_m = body.markup_mult
+
+    old_r, old_m = effective_factors_from_session(db)
+    old_prod = old_r * old_m
+    new_prod = new_r * new_m
+    ratio_emb = Decimal("1")
+    if old_prod > 0:
+        ratio_emb = new_prod / old_prod
+
+    try:
+        sync_result = sync_chat_model_prices_to_db(db, usd_rub=new_r, mult=new_m, copy_card_texts=True)
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Не удалось получить каталог OpenRouter (GET /models): {e}",
+        ) from e
+
+    synced_from_or = frozenset(sync_result.get("pricingSlugsUpdatedFromOpenRouter") or [])
+
+    emb_rescaled = 0
+    chat_rescaled = 0
+    if ratio_emb != 1:
+        q6 = Decimal("0.000001")
+        q4 = Decimal("0.01")
+        emb_rows = (
+            db.query(AiModel)
+            .filter(
+                AiModel.supports_embeddings.is_(True),
+                AiModel.supports_chat.is_(False),
+                AiModel.is_free.is_(False),
+            )
+            .all()
+        )
+        for m in emb_rows:
+            m.input_price_per_mn = (m.input_price_per_mn * ratio_emb).quantize(q6, rounding=ROUND_HALF_UP)
+            m.output_price_per_mn = (m.output_price_per_mn * ratio_emb).quantize(q6, rounding=ROUND_HALF_UP)
+            if m.fixed_price is not None:
+                m.fixed_price = (m.fixed_price * ratio_emb).quantize(q4, rounding=ROUND_HALF_UP)
+            emb_rescaled += 1
+
+        for spec in get_default_model_specs():
+            if spec.get("is_free"):
+                continue
+            slug = str(spec["slug"])
+            if slug in synced_from_or:
+                continue
+            row = db.query(AiModel).filter(AiModel.slug == slug).first()
+            if row is None or row.is_free:
+                continue
+            row.input_price_per_mn = (row.input_price_per_mn * ratio_emb).quantize(q6, rounding=ROUND_HALF_UP)
+            row.output_price_per_mn = (row.output_price_per_mn * ratio_emb).quantize(q6, rounding=ROUND_HALF_UP)
+            if row.fixed_price is not None:
+                row.fixed_price = (row.fixed_price * ratio_emb).quantize(q4, rounding=ROUND_HALF_UP)
+            chat_rescaled += 1
+
+    pf = db.query(SitePricingFactors).filter(SitePricingFactors.id == 1).first()
+    if pf is None:
+        db.add(SitePricingFactors(id=1, usd_rub=new_r, markup_mult=new_m))
+    else:
+        pf.usd_rub = new_r
+        pf.markup_mult = new_m
+    db.commit()
+    out: dict[str, Any] = {
+        "ok": True,
+        "usdRub": _admin_display_money(new_r),
+        "markupMult": _admin_display_money(new_m),
+        "embeddingsPricingRescaled": emb_rescaled,
+        "chatCatalogPricingRescaled": chat_rescaled,
+        "embeddingsScaleRatio": str(ratio_emb),
+        **sync_result,
+    }
+    return out
+
+
+@router.get("/catalog/openrouter-check")
+def admin_catalog_openrouter_check(_: str = Depends(require_admin)):
+    """
+    Сводка: локальный чат-каталог и эмбеддинги против списка ``id`` в GET …/models OpenRouter.
+
+    Флаг catalogLooksAligned учитывает только чат: именно по этим id синхронизируются цены из полей pricing в JSON.
+    Модели только для эмбеддингов там часто отсутствуют; пояснение см. в embeddingsCatalog.noteRu ответа.
+    Исключения: openrouter/auto, free-router slug, локальные ориентиры видео/STT/Lyria.
+    """
+    try:
+        from ..openrouter_catalog_check import check_catalog_vs_openrouter
+
+        return check_catalog_vs_openrouter()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Не удалось запросить каталог OpenRouter: {e}") from e
 
 
 class AdminUserPatch(BaseModel):

@@ -14,6 +14,80 @@ const ALLOWED_TTS_VOICE_IDS = [
   "shimmer",
 ];
 
+const CHAT_SIDEBAR_WIDTH_LS_KEY = "ai_proxy_chat_sidebar_px";
+/** Совпадает со старым именем cookie — удаляем cookie после переноса в localStorage. */
+const CHAT_SIDEBAR_WIDTH_COOKIE_LEGACY = "ai_proxy_chat_sidebar_px";
+
+function migrateSidebarWidthCookieToLsOnce() {
+  try {
+    if (typeof localStorage === "undefined" || typeof document === "undefined") return;
+    if (localStorage.getItem(CHAT_SIDEBAR_WIDTH_LS_KEY) != null) return;
+    const esc = CHAT_SIDEBAR_WIDTH_COOKIE_LEGACY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = document.cookie.match(new RegExp("(?:^|; )" + esc + "=([^;]*)"));
+    if (!m) return;
+    const n = parseInt(decodeURIComponent(m[1]), 10);
+    if (!Number.isFinite(n)) return;
+    localStorage.setItem(CHAT_SIDEBAR_WIDTH_LS_KEY, String(Math.round(n)));
+    document.cookie = CHAT_SIDEBAR_WIDTH_COOKIE_LEGACY + "=;path=/;max-age=0";
+  } catch {
+    /* ignore */
+  }
+}
+
+function readChatSidebarWidthStored() {
+  migrateSidebarWidthCookieToLsOnce();
+  try {
+    const raw = (localStorage.getItem(CHAT_SIDEBAR_WIDTH_LS_KEY) || "").trim();
+    if (raw === "") return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeChatSidebarWidthStored(px) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(CHAT_SIDEBAR_WIDTH_LS_KEY, String(Math.round(px)));
+  } catch {
+    /* приватный режим / quota */
+  }
+}
+
+const CHAT_SIDEBAR_MIN_PX = 200;
+const CHAT_SIDEBAR_MAX_PX = 560;
+
+function clampChatSidebarWidthPx(px, innerWidth) {
+  const iw =
+    typeof innerWidth === "number" && Number.isFinite(innerWidth)
+      ? innerWidth
+      : typeof window !== "undefined"
+        ? window.innerWidth
+        : 1024;
+  const cap = Math.min(CHAT_SIDEBAR_MAX_PX, Math.floor(iw * 0.44));
+  const floor = CHAT_SIDEBAR_MIN_PX;
+  const top = Math.max(floor, cap);
+  const x = Math.round(px);
+  if (x < floor) return floor;
+  if (x > top) return top;
+  return x;
+}
+
+/** Возвращает применённую ширину (px). */
+function applyChatSidebarWidthPx(px, innerWidth) {
+  const w = clampChatSidebarWidthPx(px, innerWidth);
+  document.documentElement.style.setProperty("--chat-sidebar-width", `${w}px`);
+  return w;
+}
+
+function defaultChatSidebarWidthPx() {
+  const fz = parseFloat(
+    typeof window !== "undefined" ? getComputedStyle(document.documentElement).fontSize || "16" : "16",
+  );
+  return Math.round((Number.isFinite(fz) ? fz : 16) * 17);
+}
+
 function readStoredTtsVoice() {
   try {
     const v = (localStorage.getItem(TTS_VOICE_STORAGE_KEY) || "").trim().toLowerCase();
@@ -400,6 +474,85 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
   return m.length > 280 ? `${m.slice(0, 277)}…` : m;
 }
 
+/**
+ * Разделитель «история ↔ чат»: перетаскивание, клавиши, ширина в localStorage на клиенте.
+ */
+function bindChatSidebarResizer(sidebarEl, resizerEl, isDrawerMode) {
+  if (!sidebarEl || !resizerEl || typeof isDrawerMode !== "function") return;
+
+  applyChatSidebarWidthPx(readChatSidebarWidthStored() ?? defaultChatSidebarWidthPx());
+
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+  let activePid = /** @type {number | null} */ (null);
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    resizerEl.classList.remove("is-dragging");
+    if (activePid != null) {
+      try {
+        resizerEl.releasePointerCapture(activePid);
+      } catch {
+        /* ignore */
+      }
+      activePid = null;
+    }
+    writeChatSidebarWidthStored(sidebarEl.getBoundingClientRect().width);
+  }
+
+  resizerEl.addEventListener("pointerdown", (e) => {
+    if (isDrawerMode()) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebarEl.getBoundingClientRect().width;
+    activePid = e.pointerId;
+    resizerEl.classList.add("is-dragging");
+    try {
+      resizerEl.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  resizerEl.addEventListener("pointermove", (e) => {
+    if (!dragging || isDrawerMode()) return;
+    applyChatSidebarWidthPx(startW + (e.clientX - startX));
+  });
+
+  resizerEl.addEventListener("pointerup", endDrag);
+  resizerEl.addEventListener("pointercancel", endDrag);
+
+  resizerEl.addEventListener("keydown", (e) => {
+    if (isDrawerMode()) return;
+    const cur = sidebarEl.getBoundingClientRect().width;
+    let tgt = cur;
+    if (e.key === "ArrowLeft") tgt = cur - 12;
+    else if (e.key === "ArrowRight") tgt = cur + 12;
+    else if (e.key === "Home") tgt = CHAT_SIDEBAR_MIN_PX;
+    else if (e.key === "End")
+      tgt = clampChatSidebarWidthPx(CHAT_SIDEBAR_MAX_PX, window.innerWidth);
+    else return;
+    e.preventDefault();
+    const w = applyChatSidebarWidthPx(tgt);
+    writeChatSidebarWidthStored(w);
+  });
+
+  let rzT = 0;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(rzT);
+    rzT = window.setTimeout(() => {
+      if (isDrawerMode()) return;
+      const raw = sidebarEl.getBoundingClientRect().width;
+      const w = applyChatSidebarWidthPx(raw);
+      if (Math.abs(w - raw) > 1.5) writeChatSidebarWidthStored(w);
+    }, 120);
+  });
+}
+
 async function main() {
   const me = await loadMe();
   const isGuest = me.guest === true;
@@ -443,6 +596,7 @@ async function main() {
   const chatSidebarBackdrop = document.getElementById("chat-sidebar-backdrop");
   const btnChatSidebarOpen = document.getElementById("btn-chat-sidebar-open");
   const btnChatSidebarClose = document.getElementById("btn-chat-sidebar-close");
+  const chatSidebarResizerEl = document.getElementById("chat-sidebar-resizer");
 
   const mqChatDrawer =
     typeof window !== "undefined" && window.matchMedia
@@ -471,7 +625,12 @@ async function main() {
   }
 
   function onChatDrawerBreakpointChange() {
-    if (!isChatDrawerMode()) setChatSidebarOpen(false);
+    if (!isChatDrawerMode()) {
+      setChatSidebarOpen(false);
+      if (!isGuest && chatSidebarEl) {
+        applyChatSidebarWidthPx(readChatSidebarWidthStored() ?? defaultChatSidebarWidthPx());
+      }
+    }
   }
 
   if (typeof mqChatDrawer.addEventListener === "function") {
@@ -494,6 +653,12 @@ async function main() {
       if (e.key !== "Escape") return;
       if (document.body.classList.contains("chat-sidebar-open")) setChatSidebarOpen(false);
     });
+    if (chatSidebarEl && chatSidebarResizerEl) {
+      chatSidebarResizerEl.removeAttribute("hidden");
+      bindChatSidebarResizer(chatSidebarEl, chatSidebarResizerEl, isChatDrawerMode);
+    } else if (chatSidebarEl) {
+      applyChatSidebarWidthPx(readChatSidebarWidthStored() ?? defaultChatSidebarWidthPx());
+    }
     setChatSidebarOpen(false);
   }
 
@@ -1323,6 +1488,16 @@ async function main() {
   }
 
   let currentConversationId = null;
+  /** Slug строки диалога в БД: если модель уже убрана из каталога, не подменяем PATCH-ем текущим селектом. */
+  let threadPersistModelSlug = null;
+
+  function threadModelSlugForPersist() {
+    if (!threadPersistModelSlug)
+      return selectedModel()?.slug ?? selectedSlug;
+    const inCatalog = chatModels.some((x) => x.slug === threadPersistModelSlug);
+    if (!inCatalog) return threadPersistModelSlug;
+    return selectedModel()?.slug ?? threadPersistModelSlug ?? selectedSlug;
+  }
 
   function modelDisplayName(slug) {
     const m = models.find((x) => x.slug === slug);
@@ -1631,7 +1806,7 @@ async function main() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            modelSlug: selectedSlug,
+            modelSlug: threadModelSlugForPersist(),
             title,
             messages,
           }),
@@ -1646,6 +1821,7 @@ async function main() {
   async function abandonOrPersistCurrent() {
     if (isGuest) {
       currentConversationId = null;
+      threadPersistModelSlug = null;
       return;
     }
     if (!currentConversationId) return;
@@ -1657,6 +1833,7 @@ async function main() {
       await persistThread();
     }
     currentConversationId = null;
+    threadPersistModelSlug = null;
   }
 
   async function openThread(id) {
@@ -1669,6 +1846,8 @@ async function main() {
     if (!r.ok) return;
     const t = await r.json();
     currentConversationId = t.id;
+    threadPersistModelSlug =
+      typeof t.modelSlug === "string" && t.modelSlug.trim() ? t.modelSlug.trim() : null;
     chatHistory.length = 0;
     for (const m of t.messages || []) {
       chatHistory.push(m);
@@ -1705,12 +1884,15 @@ async function main() {
     if (!r.ok) return;
     const created = await r.json();
     currentConversationId = created.id;
+    threadPersistModelSlug =
+      selectedModel()?.slug ?? (selectedSlug && selectedSlug.trim() ? selectedSlug.trim() : null);
     await refreshSidebarList();
   }
 
   async function initConversations() {
     if (isGuest) {
       currentConversationId = null;
+      threadPersistModelSlug = null;
       chatHistory.length = 0;
       listEl.innerHTML = "";
       errEl.style.display = "none";
@@ -1723,6 +1905,7 @@ async function main() {
     const list = await r.json();
     if (honorExplicitModelChoice) {
       currentConversationId = null;
+      threadPersistModelSlug = null;
       chatHistory.length = 0;
       listEl.innerHTML = "";
       errEl.style.display = "none";
@@ -1732,6 +1915,7 @@ async function main() {
     }
     if (!Array.isArray(list) || list.length === 0) {
       currentConversationId = null;
+      threadPersistModelSlug = null;
       await refreshSidebarList();
       return;
     }

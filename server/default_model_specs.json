@@ -176,10 +176,10 @@
     "supports_coding": true
   },
   {
-    "slug": "anthropic/claude-3.7-sonnet",
-    "display_name": "Claude 3.7 Sonnet",
+    "slug": "anthropic/claude-sonnet-4",
+    "display_name": "Claude Sonnet 4",
     "provider": "Anthropic",
-    "description_ru": "Сбалансированная Sonnet: анализ документов, эссе, аккуратные формулировки.",
+    "description_ru": "Базовая Sonnet 4 поколение: задачи средней сложности, код и рабочая переписка.",
     "input_price_per_mn": "900",
     "output_price_per_mn": "4500",
     "fixed_price": null,

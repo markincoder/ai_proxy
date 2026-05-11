@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from ..deps import get_db
@@ -8,7 +8,8 @@ router = APIRouter(prefix="/api", tags=["models"])
 
 
 @router.get("/models")
-def list_models(db: Session = Depends(get_db)):
+def list_models(response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     rows = (
         db.query(AiModel)
         .filter(AiModel.is_active.is_(True))
