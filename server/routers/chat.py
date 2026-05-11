@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from decimal import Decimal
 from typing import Any, Annotated, AsyncIterator
 
@@ -24,6 +25,8 @@ from ..openrouter import (
 from ..openai_audio_input import reencode_audio_bytes_to_wav
 from ..pricing_rub import rub_price_ceil_2
 from ..services.spend import assert_balance_covers_estimate, record_spend
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -129,7 +132,7 @@ def _pick_stt_model_for_voice_input(db: Session) -> AiModel | None:
 
 def _openrouter_http_error_detail(resp: httpx.Response) -> str:
     """
-    Текст ошибки OpenRouter для HTTPException(detail=...).
+    Текст ошибки провайдера (сырой JSON/сообщение) для HTTPException(detail=...).
     Часто приходит только error.message «Provider returned 400» без причины — тогда добавляем сырой JSON.
     """
     raw = (resp.text or "").strip()
@@ -208,9 +211,10 @@ async def _transcribe_and_bill(
             content, filename, mime, stt.slug, language=language
         )
     except httpx.RequestError as exc:
+        logger.warning("transcribe: нет связи с провайдером: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail=f"Провайдер недоступен (сеть/прокси). Попробуйте OPENROUTER_HTTPX_TRUST_ENV=false. {exc}",
+            detail="Сейчас нет связи с провайдером модели. Повторите запрос позже.",
         ) from exc
     if tr.status_code >= 400:
         raise HTTPException(
@@ -650,17 +654,18 @@ async def _handle_chat_json(
         try:
             upstream = await chat_completions(payload)
         except httpx.RequestError as exc:
+            logger.warning("chat completions: нет связи с провайдером: %s", exc, exc_info=True)
             return JSONResponse(
                 status_code=503,
                 content={
-                    "error": "OpenRouter unavailable",
-                    "detail": str(exc),
+                    "error": "provider_unavailable",
+                    "detail": "Сейчас нет связи с провайдером модели. Повторите запрос позже.",
                 },
             )
         if upstream.status_code >= 400:
             return JSONResponse(
                 status_code=upstream.status_code,
-                content={"error": "OpenRouter error", "detail": upstream.text},
+                content={"error": "provider_error", "detail": upstream.text},
             )
         data = upstream.json()
         usage = data.get("usage")
@@ -703,11 +708,9 @@ async def _handle_chat_json(
                     if line_carry.strip():
                         state = merge_usage_line(line_carry, state)
         except httpx.RequestError as exc:
+            logger.warning("chat stream: нет связи с провайдером: %s", exc, exc_info=True)
             yield _sse_upstream_error(
-                "Нет соединения с OpenRouter (сеть, файрвол или прокси). "
-                "Если используется корпоративный VPN/прокси, попробуйте в .env: "
-                "OPENROUTER_HTTPX_TRUST_ENV=false. "
-                f"Технически: {exc}"
+                "Сейчас нет связи с провайдером модели. Повторите запрос позже."
             )
             return
 

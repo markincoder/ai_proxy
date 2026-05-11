@@ -1,8 +1,9 @@
-"""Эмбеддинги через OpenRouter: POST /api/v1/embeddings + биллинг по usage."""
+"""Эмбеддинги: POST /api/v1/embeddings + биллинг по usage."""
 
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import httpx
@@ -15,6 +16,8 @@ from ..deps import resolve_user_id
 from ..models import AiModel
 from ..openrouter import embeddings_create
 from ..services.spend import assert_balance_covers_estimate, record_spend
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["embeddings"])
 
@@ -132,11 +135,12 @@ async def dispatch_embeddings(request: Request) -> JSONResponse:
     try:
         resp = await embeddings_create(upstream)
     except httpx.RequestError as exc:
+        logger.warning("embeddings: нет связи с провайдером: %s", exc, exc_info=True)
         return JSONResponse(
             status_code=503,
             content={
                 "error": {
-                    "message": f"Upstream unavailable: {exc}",
+                    "message": "Сейчас нет связи с провайдером модели. Повторите запрос позже.",
                     "type": "api_connection_error",
                 },
             },
@@ -161,7 +165,7 @@ async def dispatch_embeddings(request: Request) -> JSONResponse:
             status_code=502,
             content={
                 "error": {
-                    "message": "Invalid JSON from embeddings provider",
+                    "message": "Некорректный ответ провайдера эмбеддингов (не JSON).",
                     "type": "invalid_request_error",
                 },
             },

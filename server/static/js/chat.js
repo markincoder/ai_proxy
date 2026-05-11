@@ -491,6 +491,16 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
   const m = String(detail || "").trim();
   const low = m.toLowerCase();
 
+  // Устаревшие серверные тексты — без упоминания внутренней инфраструктуры
+  if (
+    m.includes("Нет соединения с OpenRouter") ||
+    m.includes("OPENROUTER_HTTPX_TRUST_ENV") ||
+    m.includes("попробуйте в .env") ||
+    low.includes("upstream unavailable")
+  ) {
+    return "Сейчас нет связи с провайдером модели. Повторите запрос позже.";
+  }
+
   const providerBlob = () => {
     if (useFreeQueueStory) {
       return (
@@ -2469,7 +2479,7 @@ async function main() {
       (detail) => {
         const mod = selectedModel();
         const raw = typeof detail === "string" ? detail : "";
-        console.warn("[chat] stream error (OpenRouter)", raw);
+        console.warn("[chat] stream error", raw);
         const msg = humanizeOpenRouterStreamError(raw, {
           isFree: mod?.isFree === true,
           modelSlug: mod?.slug,

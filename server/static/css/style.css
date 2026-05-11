@@ -1993,7 +1993,7 @@ select.settings-select {
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    gap: 0.14rem;
+    gap: 0.28rem;
     padding-bottom: 0.06rem;
   }
 
@@ -2002,9 +2002,10 @@ select.settings-select {
   }
 
   .nav-link {
-    min-height: 2.05rem;
-    padding: 0.22rem 0.52rem;
-    font-size: 0.74rem;
+    min-height: 2.55rem;
+    padding: 0.4rem 0.72rem;
+    font-size: 0.875rem;
+    font-weight: 500;
     align-items: center;
     flex-shrink: 0;
   }
@@ -2012,16 +2013,16 @@ select.settings-select {
   .nav-actions .btn,
   .nav-actions .btn-primary,
   .nav-actions .btn-accent {
-    min-height: 2.05rem;
-    padding: 0.24rem 0.52rem;
-    font-size: 0.74rem;
+    min-height: 2.55rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.875rem;
   }
 
   .balance-pill {
     flex-shrink: 1;
     min-width: 0;
-    padding: 0.24rem 0.45rem;
-    font-size: 0.72rem;
+    padding: 0.36rem 0.55rem;
+    font-size: 0.875rem;
   }
 
   /* Моб.: только сумма в «пилюле» */

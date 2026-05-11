@@ -80,7 +80,7 @@ async def create_video_job(request: Request, body: CreateVideoJobBody):
     try:
         data = resp.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Invalid JSON from OpenRouter")
+        raise HTTPException(status_code=502, detail="Некорректный JSON от провайдера видео")
 
     jid = data.get("id")
     if isinstance(jid, str) and user_id:
@@ -97,7 +97,7 @@ async def get_video_job(request: Request, job_id: str):
     try:
         data = resp.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Invalid JSON from OpenRouter")
+        raise HTTPException(status_code=502, detail="Некорректный JSON от провайдера видео")
 
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=data)
@@ -146,7 +146,7 @@ async def get_video_job_content(
     try:
         data = st.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Invalid JSON from OpenRouter")
+        raise HTTPException(status_code=502, detail="Некорректный JSON от провайдера видео")
     if st.status_code != 200:
         raise HTTPException(status_code=st.status_code, detail=data)
 
