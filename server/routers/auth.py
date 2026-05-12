@@ -8,7 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import blocked_user_detail, get_db, require_user_id, user_public_identifier
+from ..deps import (
+    blocked_user_detail,
+    get_db,
+    require_user_id,
+    touch_user_last_login,
+    user_public_identifier,
+)
 from ..models import AiModel, User
 from ..services.notify import schedule_new_user_notification
 from ..passwords import hash_password, verify_password
@@ -70,6 +76,9 @@ def me(request: Request, db: Session = Depends(get_db)):
             "usernameLocked": False,
             "hasPassword": False,
             "lastModelSlug": None,
+            "vkUserId": None,
+            "yandexUserId": None,
+            "lastLoginAt": None,
         }
     user = db.query(User).filter(User.id == uid).first()
     if not user:
@@ -90,6 +99,9 @@ def me(request: Request, db: Session = Depends(get_db)):
         "isAdmin": user.is_admin == 1,
         "isBlocked": user.is_blocked == 1,
         "lastModelSlug": (user.last_chat_model_slug or None),
+        "vkUserId": user.vk_user_id,
+        "yandexUserId": user.yandex_user_id,
+        "lastLoginAt": (user.last_login_at.isoformat() + "Z") if user.last_login_at else None,
     }
 
 
@@ -147,6 +159,9 @@ def patch_me(
         "isAdmin": user.is_admin == 1,
         "isBlocked": user.is_blocked == 1,
         "lastModelSlug": (user.last_chat_model_slug or None),
+        "vkUserId": user.vk_user_id,
+        "yandexUserId": user.yandex_user_id,
+        "lastLoginAt": (user.last_login_at.isoformat() + "Z") if user.last_login_at else None,
     }
 
 
@@ -163,6 +178,7 @@ def login_password(request: Request, body: LoginPasswordBody, db: Session = Depe
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
     request.session["user_id"] = user.id
+    touch_user_last_login(db, user.id)
     return {"ok": True, "userId": user.id}
 
 
@@ -200,6 +216,7 @@ def register(request: Request, body: RegisterBody, db: Session = Depends(get_db)
         raise HTTPException(status_code=409, detail="Этот логин уже занят") from None
     db.refresh(user)
     request.session["user_id"] = user.id
+    touch_user_last_login(db, user.id)
     schedule_new_user_notification(
         str(user.id),
         user_public_identifier(user),

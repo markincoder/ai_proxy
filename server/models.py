@@ -39,6 +39,8 @@ class User(Base):
     is_blocked: Mapped[int] = mapped_column(Integer, default=0)
     # Последняя выбранная в чате модель (slug из ai_models); синхронизируется с клиентом.
     last_chat_model_slug: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Успешный вход (OAuth / пароль / регистрация); naive UTC как created_at.
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
     payment_orders: Mapped[list["PaymentOrder"]] = relationship(back_populates="user")

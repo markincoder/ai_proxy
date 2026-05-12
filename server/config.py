@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     pricing_markup_mult: str = Field(default="1", validation_alias="PRICING_MARKUP_MULT")
     # true: httpx использует HTTP(S)_PROXY из окружения. false — прямой выход (если ConnectError/TLS через прокси).
     httpx_trust_env_openrouter: str = Field(default="true", validation_alias="OPENROUTER_HTTPX_TRUST_ENV")
+    # Кэш GET /api/models и GET /v1/models в памяти процесса (секунды, по умолчанию 600). 0 — отключить, каждый запрос в БД.
+    models_list_cache_ttl_sec: int = Field(
+        default=600,
+        ge=0,
+        validation_alias="MODELS_LIST_CACHE_TTL_SEC",
+    )
 
     yookassa_env: str = Field(default="false", validation_alias="YOOKASSA_ENABLED")
 

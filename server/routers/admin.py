@@ -25,6 +25,7 @@ from ..models import (
     User,
 )
 from ..openrouter_price_sync import sync_chat_model_prices_to_db
+from ..services.models_catalog_cache import invalidate_public_models_cache
 from ..pricing_factors import (
     effective_factors_from_session,
     environment_usd_rub_markup,
@@ -169,6 +170,7 @@ def admin_list_users(
             "isAdmin": u.is_admin == 1,
             "isBlocked": u.is_blocked == 1,
             "createdAt": (u.created_at.isoformat() + "Z") if u.created_at else None,
+            "lastLoginAt": (u.last_login_at.isoformat() + "Z") if u.last_login_at else None,
         }
         for u in rows
     ]
@@ -220,6 +222,7 @@ def admin_patch_model(
         setattr(row, key, val)
     db.commit()
     db.refresh(row)
+    invalidate_public_models_cache()
     return _serialize_model(row)
 
 
@@ -317,6 +320,7 @@ def admin_apply_pricing_factors(
         pf.usd_rub = new_r
         pf.markup_mult = new_m
     db.commit()
+    invalidate_public_models_cache()
     out: dict[str, Any] = {
         "ok": True,
         "usdRub": _admin_display_money(new_r),

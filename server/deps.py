@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -40,6 +41,16 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def touch_user_last_login(db: Session, user_id: str) -> None:
+    """Обновляет last_login_at (UTC naive) после успешной аутентификации."""
+    n = datetime.utcnow()
+    affected = (
+        db.query(User).filter(User.id == user_id).update({"last_login_at": n}, synchronize_session=False)
+    )
+    if affected:
+        db.commit()
 
 
 def get_user_id_optional(request: Request) -> Optional[str]:

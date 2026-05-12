@@ -493,6 +493,24 @@ def _ensure_user_is_blocked_column(engine) -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0"))
 
 
+def _ensure_user_last_login_at_column(engine) -> None:
+    """Существующие БД: last_login_at (последний успешный вход)."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "last_login_at" in cols:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+        elif dialect == "postgresql":
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP NULL"))
+        else:
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL"))
+
+
 def _drop_legacy_user_pii_columns(engine) -> None:
     """Удаляем неиспользуемые колонки: ФИО (name), телефон — не храним email/ФИО/контакты пользователя."""
     insp = inspect(engine)
@@ -520,6 +538,7 @@ def init_db() -> None:
     _ensure_users_username_password_columns(engine)
     _ensure_user_last_chat_model_slug_column(engine)
     _ensure_user_is_blocked_column(engine)
+    _ensure_user_last_login_at_column(engine)
     _ensure_ai_model_embedding_columns(engine)
     _drop_legacy_user_pii_columns(engine)
     specs = get_all_catalog_specs_ordered()

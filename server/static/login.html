@@ -232,6 +232,18 @@
         }, 400);
       });
 
+      async function persistIdentityAfterLogin() {
+        try {
+          const m = await import("/static/js/identity-links.js?v=2");
+          const mr = await api("/api/auth/me");
+          if (!mr.ok) return;
+          const me = await mr.json();
+          m.persistIdentityLinksFromMe(me);
+        } catch {
+          /* ignore */
+        }
+      }
+
       document.getElementById("form-login").addEventListener("submit", async (ev) => {
         ev.preventDefault();
         hideLocalMsg();
@@ -242,6 +254,7 @@
         };
         const r = await api("/api/auth/login-password", { method: "POST", body: JSON.stringify(body) });
         if (r.ok) {
+          await persistIdentityAfterLogin();
           location.href = nextUrl();
           return;
         }
@@ -282,6 +295,7 @@
         const body = { username, password, passwordRepeat };
         const r = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
         if (r.ok) {
+          await persistIdentityAfterLogin();
           location.href = nextUrl();
           return;
         }
@@ -347,14 +361,27 @@
         const hasOAuth = oauthYandex || oauthVk;
         loginHasOAuth = hasOAuth;
 
+        let oauthMod = null;
+        try {
+          oauthMod = await import("/static/js/identity-links.js?v=2");
+        } catch {
+          oauthMod = null;
+        }
+
         if (hasOAuth) {
           document.getElementById("oauth-row").style.display = "flex";
           document.getElementById("login-or-divider").style.display = "flex";
           document.getElementById("no-oauth-hint").style.display = "none";
-          if (oauthYandex) document.getElementById("link-yandex").href = "/api/auth/oauth/yandex/start";
-          else document.getElementById("link-yandex").style.display = "none";
-          if (oauthVk) document.getElementById("link-vk").href = "/api/auth/oauth/vk/start";
-          else document.getElementById("link-vk").style.display = "none";
+          if (oauthYandex) {
+            document.getElementById("link-yandex").href = oauthMod
+              ? oauthMod.oauthStartUrl("/api/auth/oauth/yandex/start")
+              : "/api/auth/oauth/yandex/start";
+          } else document.getElementById("link-yandex").style.display = "none";
+          if (oauthVk) {
+            document.getElementById("link-vk").href = oauthMod
+              ? oauthMod.oauthStartUrl("/api/auth/oauth/vk/start")
+              : "/api/auth/oauth/vk/start";
+          } else document.getElementById("link-vk").style.display = "none";
           viewChoice.removeAttribute("hidden");
           viewLocal.setAttribute("hidden", "");
           btnBack.setAttribute("hidden", "");

@@ -1,4 +1,5 @@
 import { consumeStream } from "./sse.js?v=23";
+import { persistIdentityLinksFromMe } from "./identity-links.js?v=2";
 
 const MODEL_STORAGE_KEY = "ai_proxy_model_slug";
 /** Выставляется на /tariffs при выборе модели — чат не подменяет её моделью из старого диалога. */
@@ -645,11 +646,15 @@ function bindChatSidebarResizer(sidebarEl, resizerEl, isDrawerMode) {
 }
 
 async function main() {
-  const me = await loadMe();
+  const [me, cfgRaw, modelsRaw] = await Promise.all([
+    loadMe(),
+    api("/api/config").then((r) => r.json().catch(() => ({}))),
+    api("/api/models").then((r) => r.json().catch(() => null)),
+  ]);
+  persistIdentityLinksFromMe(me);
   const isGuest = me.guest === true;
+  const cfg = cfgRaw && typeof cfgRaw === "object" ? cfgRaw : {};
 
-  const cfg = await api("/api/config").then((r) => r.json().catch(() => ({})));
-  const modelsRaw = await api("/api/models").then((r) => r.json().catch(() => null));
   const models = Array.isArray(modelsRaw)
     ? modelsRaw.filter(
         (x) =>
@@ -1006,7 +1011,18 @@ async function main() {
     return freeModels[0]?.slug ?? null;
   }
 
-  let selectedSlug = firstFreeChatModelSlug(chatModels) ?? chatModels[0]?.slug ?? "";
+  /** Без сохранённого выбора: slug из конфига (OPENROUTER_FREE_ROUTER_SLUG), иначе первая бесплатная в каталоге. */
+  function defaultChatModelSlugOrFallback() {
+    const fromCfg =
+      cfg && typeof cfg.openrouterFreeRouterSlug === "string"
+        ? cfg.openrouterFreeRouterSlug.trim()
+        : "";
+    const prefer = fromCfg || "openrouter/free";
+    if (prefer && chatModels.some((x) => x.slug === prefer)) return prefer;
+    return firstFreeChatModelSlug(chatModels) ?? chatModels[0]?.slug ?? "";
+  }
+
+  let selectedSlug = defaultChatModelSlugOrFallback();
   /** true: не открывать последний чат при старте — уважать ?model= или выбор с тарифов. */
   let honorExplicitModelChoice = false;
   /* Сначала ?model= (переход с /tariffs), иначе последний выбор из сессии. */
@@ -1043,7 +1059,7 @@ async function main() {
       }
 
       if (!remembered) {
-        const d = firstFreeChatModelSlug(chatModels);
+        const d = defaultChatModelSlugOrFallback();
         if (d) {
           selectedSlug = d;
           sessionStorage.setItem(MODEL_STORAGE_KEY, d);
@@ -1552,7 +1568,8 @@ async function main() {
         selectedSlug,
       );
     }
-    return chatModels[0] ?? null;
+    const fb = defaultChatModelSlugOrFallback();
+    return chatModels.find((x) => x.slug === fb) ?? chatModels[0] ?? null;
   }
 
   updateHints();
@@ -2191,6 +2208,8 @@ async function main() {
     await openThread(list[0].id);
   }
 
+  await initConversations();
+
   async function selectModelPick(slug) {
     if (!chatModels.some((x) => x.slug === slug)) return;
     if (slug === selectedSlug) return;
@@ -2673,8 +2692,6 @@ async function main() {
       setSidebarBusy(false);
     }
   }
-
-  await initConversations();
 
   if (btnNewChat) {
     btnNewChat.addEventListener("click", () => {

@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import re
 import secrets
 from decimal import Decimal
 from urllib.parse import quote, urlencode
@@ -9,11 +10,11 @@ from urllib.parse import quote, urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import blocked_user_detail, get_db, user_public_identifier
+from ..deps import blocked_user_detail, get_db, touch_user_last_login, user_public_identifier
 from ..models import User
 from ..services.notify import schedule_new_user_notification
 
@@ -23,6 +24,82 @@ VK_API_VER = "5.199"
 # id.vk.ru тянет скрипты/статику с vk.ru; у части пользователей это даёт пустую форму «Ошибка загрузки».
 # Документация FAQ указывает обмен кода на id.vk.com/oauth2/auth — тот же хост для /authorize.
 VK_ID_HOST = "https://id.vk.com"
+
+_MERGE_VK_ID_RE = re.compile(r"^[1-9]\d{0,30}$")
+_MERGE_YANDEX_ID_RE = re.compile(r"^[1-9]\d{0,62}$")
+
+
+def _merge_hints_dict(merge_vk: str | None, merge_yandex: str | None) -> dict[str, str]:
+    hints: dict[str, str] = {}
+    if merge_vk:
+        v = merge_vk.strip()
+        if _MERGE_VK_ID_RE.fullmatch(v):
+            hints["vk"] = v
+    if merge_yandex:
+        v = merge_yandex.strip()
+        if _MERGE_YANDEX_ID_RE.fullmatch(v):
+            hints["yandex"] = v
+    return hints
+
+
+def _merge_hints_from_session_value(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    vk_raw = raw.get("vk")
+    ya_raw = raw.get("yandex")
+    return _merge_hints_dict(
+        vk_raw if isinstance(vk_raw, str) else None,
+        ya_raw if isinstance(ya_raw, str) else None,
+    )
+
+
+def _pick_merge_candidate(db: Session, hints: dict[str, str], *, attaching: str):
+    """Подбор строки users: только второй oauth-id (VK«»Яндекс), без учёта логина/пароля."""
+    if not hints:
+        return None
+    if attaching == "yandex":
+        val = hints.get("vk")
+        if val:
+            return db.query(User).filter(User.vk_user_id == val).first()
+        return None
+    val = hints.get("yandex")
+    if val:
+        return db.query(User).filter(User.yandex_user_id == val).first()
+    return None
+
+
+def _ensure_yandex_user(db: Session, yid: str, hints: dict[str, str], *, initial: Decimal):
+    existing = db.query(User).filter(User.yandex_user_id == yid).first()
+    if existing:
+        return existing, False
+    cand = _pick_merge_candidate(db, hints, attaching="yandex")
+    if cand is not None and cand.yandex_user_id is None:
+        cand.yandex_user_id = yid
+        db.commit()
+        db.refresh(cand)
+        return cand, False
+    user = User(yandex_user_id=yid, balance=initial)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user, True
+
+
+def _ensure_vk_user(db: Session, vk_uid: str, hints: dict[str, str], *, initial: Decimal):
+    existing = db.query(User).filter(User.vk_user_id == vk_uid).first()
+    if existing:
+        return existing, False
+    cand = _pick_merge_candidate(db, hints, attaching="vk")
+    if cand is not None and cand.vk_user_id is None:
+        cand.vk_user_id = vk_uid
+        db.commit()
+        db.refresh(cand)
+        return cand, False
+    user = User(vk_user_id=vk_uid, balance=initial)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user, True
 
 
 def _public_base() -> str:
@@ -92,24 +169,12 @@ def _yandex_user_id(access_token: str) -> str:
     return str(raw_id)
 
 
-def _get_or_create_vk_user(db: Session, vk_numeric_id: str) -> tuple[User, bool]:
-    s = get_settings()
-    user = db.query(User).filter(User.vk_user_id == vk_numeric_id).first()
-    initial = Decimal(s.oauth_new_user_balance)
-    if not user:
-        user = User(
-            vk_user_id=vk_numeric_id,
-            balance=initial,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user, True
-    return user, False
-
-
 class VkSdkSessionBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     access_token: str
+    merge_vk: str | None = None
+    merge_yandex: str | None = None
 
 
 @router.post("/vk/session")
@@ -125,7 +190,9 @@ def vk_session_from_sdk_token(request: Request, body: VkSdkSessionBody, db: Sess
         uid = _vk_user_id_from_access_token(token)
     except (httpx.HTTPError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid or expired VK access token")
-    user, created = _get_or_create_vk_user(db, uid)
+    hints = _merge_hints_dict(body.merge_vk, body.merge_yandex)
+    initial = Decimal(s.oauth_new_user_balance)
+    user, created = _ensure_vk_user(db, uid, hints, initial=initial)
     if created:
         schedule_new_user_notification(
             str(user.id),
@@ -136,14 +203,23 @@ def vk_session_from_sdk_token(request: Request, body: VkSdkSessionBody, db: Sess
     if user.is_blocked == 1:
         raise HTTPException(status_code=403, detail=blocked_user_detail(user))
     request.session["user_id"] = user.id
+    touch_user_last_login(db, user.id)
     return {"ok": True, "user_id": request.session.get("user_id")}
 
 
 @router.get("/yandex/start")
-def yandex_oauth_start(request: Request):
+def yandex_oauth_start(
+    request: Request,
+    merge_vk: str | None = None,
+    merge_yandex: str | None = None,
+):
     s = get_settings()
     if not s.yandex_oauth_configured:
         raise HTTPException(status_code=404, detail="Yandex OAuth not configured")
+    request.session.pop("oauth_pending_merge_yandex", None)
+    mh = _merge_hints_dict(merge_vk, merge_yandex)
+    if mh:
+        request.session["oauth_pending_merge_yandex"] = mh
     state = secrets.token_urlsafe(32)
     request.session["oauth_yandex_state"] = state
     # force_confirm=yes: всегда показать экран Яндекса с выбором аккаунта (не «тихий» вход в последний логин).
@@ -199,16 +275,10 @@ def yandex_oauth_callback(
     except (httpx.HTTPError, ValueError, KeyError):
         return _login_redirect("yandex_profile")
 
-    user = db.query(User).filter(User.yandex_user_id == yid).first()
+    hints = _merge_hints_from_session_value(request.session.pop("oauth_pending_merge_yandex", None))
     initial = Decimal(s.oauth_new_user_balance)
-    if not user:
-        user = User(
-            yandex_user_id=yid,
-            balance=initial,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    user, created = _ensure_yandex_user(db, yid, hints, initial=initial)
+    if created:
         schedule_new_user_notification(
             str(user.id),
             user_public_identifier(user),
@@ -219,14 +289,23 @@ def yandex_oauth_callback(
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
     request.session["user_id"] = user.id
+    touch_user_last_login(db, user.id)
     return RedirectResponse(url="/", status_code=302)
 
 
 @router.get("/vk/start")
-def vk_oauth_start(request: Request):
+def vk_oauth_start(
+    request: Request,
+    merge_vk: str | None = None,
+    merge_yandex: str | None = None,
+):
     s = get_settings()
     if not s.vk_oauth_configured:
         raise HTTPException(status_code=404, detail="VK OAuth not configured")
+    request.session.pop("oauth_pending_merge_vk", None)
+    mh = _merge_hints_dict(merge_vk, merge_yandex)
+    if mh:
+        request.session["oauth_pending_merge_vk"] = mh
     # VK ID (приложения в кабинете id.vk.com): только id.vk.ru + PKCE; oauth.vk.com даёт Security Error.
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(32)
@@ -296,7 +375,9 @@ def vk_oauth_callback(
     except (httpx.HTTPError, KeyError, ValueError):
         return _login_redirect("vk_token")
 
-    user, created = _get_or_create_vk_user(db, vk_uid)
+    hints = _merge_hints_from_session_value(request.session.pop("oauth_pending_merge_vk", None))
+    initial = Decimal(s.oauth_new_user_balance)
+    user, created = _ensure_vk_user(db, vk_uid, hints, initial=initial)
     if created:
         schedule_new_user_notification(
             str(user.id),
@@ -307,4 +388,5 @@ def vk_oauth_callback(
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
     request.session["user_id"] = user.id
+    touch_user_last_login(db, user.id)
     return RedirectResponse(url="/", status_code=302)

@@ -103,6 +103,14 @@
     if (redirected) return;
 
     const me = await loadMe();
+    if (me && me.guest !== true) {
+      try {
+        const m = await import("/static/js/identity-links.js?v=2");
+        m.persistIdentityLinksFromMe(me);
+      } catch {
+        /* ignore */
+      }
+    }
     const cfg = await api("/api/config").then((r) => r.json().catch(() => ({})));
     const isGuest = me.guest === true;
 

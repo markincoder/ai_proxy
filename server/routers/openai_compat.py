@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..database import SessionLocal
 from ..deps import get_db
 from ..models import AiModel
+from ..services.models_catalog_cache import get_public_models_cached
 from .chat import (
     ChatJsonBody,
     Msg,
@@ -136,26 +138,28 @@ async def openai_embeddings(request: Request):
 
 
 @router.get("/models")
-def openai_list_models(db: Session = Depends(get_db)):
-    rows = (
-        db.query(AiModel)
-        .filter(AiModel.is_active.is_(True))
-        .order_by(AiModel.display_name.asc())
-        .all()
-    )
+def openai_list_models(response: Response, db: Session = Depends(get_db)):
+    s = get_settings()
+    ttl = float(s.models_list_cache_ttl_sec)
+    catalog = get_public_models_cached(db, ttl)
+    if ttl > 0:
+        client_max = min(int(ttl), 300)
+        response.headers["Cache-Control"] = f"public, max-age={client_max}"
+    else:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
     return {
         "object": "list",
         "data": [
             {
-                "id": m.slug,
+                "id": item["slug"],
                 "object": "model",
                 "created": 1_700_000_000,
                 "owned_by": (
-                    (m.provider or "openrouter").split("/")[0]
-                    if "/" in (m.provider or "")
-                    else (m.provider or "openrouter")
+                    (item.get("provider") or "openrouter").split("/")[0]
+                    if "/" in str(item.get("provider") or "")
+                    else (item.get("provider") or "openrouter")
                 ),
             }
-            for m in rows
+            for item in catalog
         ],
     }

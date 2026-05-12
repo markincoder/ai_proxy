@@ -347,6 +347,7 @@
                   <th>Статус</th>
                   <th>ID</th>
                   <th>Создан</th>
+                  <th>Последний вход</th>
                   <th>Действия</th>
                 </tr>
               </thead>
@@ -812,6 +813,7 @@
                 <td>${blocked}</td>
                 <td><code>${esc(u.id)}</code></td>
                 <td>${esc(u.createdAt || "—")}</td>
+                <td>${esc(u.lastLoginAt || "—")}</td>
                 <td class="admin-user-actions">
                   <button type="button" class="btn btn-primary" data-threads="${esc(u.id)}">Чаты</button>
                   ${blkBtn}
