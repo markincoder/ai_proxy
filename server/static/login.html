@@ -369,18 +369,32 @@
         }
 
         if (hasOAuth) {
+          /* Иначе гонка с defer app-nav / чатом: href без merge_* → второй провайдер создаёт нового user */
+          await persistIdentityAfterLogin();
           document.getElementById("oauth-row").style.display = "flex";
           document.getElementById("login-or-divider").style.display = "flex";
           document.getElementById("no-oauth-hint").style.display = "none";
           if (oauthYandex) {
-            document.getElementById("link-yandex").href = oauthMod
+            const ly = document.getElementById("link-yandex");
+            ly.href = oauthMod
               ? oauthMod.oauthStartUrl("/api/auth/oauth/yandex/start")
               : "/api/auth/oauth/yandex/start";
+            if (oauthMod) {
+              ly.addEventListener("pointerdown", () => {
+                ly.href = oauthMod.oauthStartUrl("/api/auth/oauth/yandex/start");
+              });
+            }
           } else document.getElementById("link-yandex").style.display = "none";
           if (oauthVk) {
-            document.getElementById("link-vk").href = oauthMod
+            const lv = document.getElementById("link-vk");
+            lv.href = oauthMod
               ? oauthMod.oauthStartUrl("/api/auth/oauth/vk/start")
               : "/api/auth/oauth/vk/start";
+            if (oauthMod) {
+              lv.addEventListener("pointerdown", () => {
+                lv.href = oauthMod.oauthStartUrl("/api/auth/oauth/vk/start");
+              });
+            }
           } else document.getElementById("link-vk").style.display = "none";
           viewChoice.removeAttribute("hidden");
           viewLocal.setAttribute("hidden", "");

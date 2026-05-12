@@ -1533,6 +1533,8 @@ async function main() {
   const chatHistory = [];
   /** Пока идёт генерация видео — не переключать диалог/модель. */
   let videoGenInProgress = false;
+  let streaming = false;
+  let transcribing = false;
 
   function selectedModel() {
     const found = chatModels.find((x) => x.slug === selectedSlug);
@@ -2202,9 +2204,6 @@ async function main() {
     schedulePersistLastModel(slug);
     await refreshSidebarList();
   }
-
-  let streaming = false;
-  let transcribing = false;
 
   function setComposerDisabled(flag) {
     if (inputEl) inputEl.disabled = flag;
