@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Разработчикам — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=72" />
+    <link rel="stylesheet" href="/static/css/style.css?v=73" />
     <style>
       .dev-doc-page {
         padding-left: 0;
@@ -218,6 +218,7 @@
                 <li><a href="#sec-examples-python" class="dev-toc-link">Python</a></li>
               </ul>
             </li>
+            <li><a href="#sec-more" class="dev-toc-link">Озвучка и изображения</a></li>
             <li>
               <a href="#sec-vibe" class="dev-toc-link">Vibe coding</a>
               <ul class="dev-toc-sub">
@@ -225,8 +226,13 @@
                 <li><a href="#sec-vibe-cline" class="dev-toc-link">Cline</a></li>
               </ul>
             </li>
-            <li><a href="#sec-embeddings" class="dev-toc-link">Embeddings</a></li>
-            <li><a href="#sec-more" class="dev-toc-link">Озвучка и изображения</a></li>
+            <li>
+              <a href="#sec-embeddings" class="dev-toc-link">Embeddings</a>
+              <ul class="dev-toc-sub">
+                <li><a href="#sec-emb-api" class="dev-toc-link">Справочник API</a></li>
+                <li><a href="#sec-emb-examples" class="dev-toc-link">Примеры запросов</a></li>
+              </ul>
+            </li>
           </ul>
         </aside>
 
@@ -242,9 +248,7 @@
           (например, <code>openai/gpt-5.4</code>).
         </p>
         <p class="docs-lead">
-          Актуальные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>. В интерфейсе чата и на «Тарифах» одна
-          модель может повторяться в <strong>нескольких вкладках</strong>, если у неё несколько возможностей (например, чат
-          и картинки, или речь и музыкальное API).
+          Актуальные модели и тарифы смотри в: <a href="/tariffs">«Тарифы»</a>.
         </p>
       </section>
 
@@ -412,6 +416,35 @@
           </p>
         </div>
 
+        <!-- Claude Code: скрыто в UI; снять hidden с блока ниже, чтобы снова показать -->
+        <div class="dev-subsection" id="sec-vibe-claude-code" hidden aria-hidden="true">
+          <h3>Claude Code</h3>
+          <p class="docs-lead">
+            <a href="https://www.anthropic.com/claude-code" rel="noopener noreferrer">Claude Code</a> — официальный CLI
+            от Anthropic; подключается к совместимому с <strong>Messages API</strong> серверу (тот же путь
+            <code>POST …/v1/messages</code>, заголовок <code>anthropic-version</code>). Обзор переменных — например у
+            <a href="https://routerai.ru/pages/vibe-coding-claude-code" rel="noopener noreferrer">RouterAI</a>.
+          </p>
+          <p class="docs-lead">
+            Укажите базовый URL для Anthropic-клиента и ключ II Proxy:
+          </p>
+          <pre class="docs-pre" id="dev-claude-code-env">Загрузка…</pre>
+          <p class="docs-lead">
+            Значение <code>ANTHROPIC_BASE_URL</code> — <strong>корень API</strong> II Proxy: <code id="docs-url-anthropic-base">…</code>
+            (клиент сам добавит <code>/v1/messages</code>, в итоге запрос уходит на
+            <code id="docs-url-api-messages">…</code>). В теле запросов поле <code>model</code> — это
+            <strong>slug модели</strong> из <a href="/tariffs">«Тарифов»</a> (как в <code>GET /api/models</code>), например
+            <code>anthropic/claude-opus-4.7</code>. Тот же ключ <code>iip_…</code> можно передать заголовком
+            <code>x-api-key</code> — сервер принимает его наравне с <code>Authorization: Bearer</code>.
+          </p>
+          <p class="docs-note">
+            Параллельно доступен маршрут в стиле <strong>OpenAI</strong>:
+            <code id="docs-url-v1-chat">…</code> и JSON с <code>modelSlug</code> на <code>POST …/api/v1/messages</code> —
+            для Kilo Code / Cline используйте
+            <code id="docs-url-openai-base">…</code> как Base URL (см. блоки выше).
+          </p>
+        </div>
+
         <p class="docs-lead">
           Каталог чат-моделей и цены — <a href="/tariffs">«Тарифы»</a> и выпадающий список на
           <a href="/">главной</a> после входа; JSON для интеграций — <code>GET /api/models</code>. Проверка API:
@@ -424,11 +457,87 @@
       <section class="docs-section" id="sec-embeddings">
         <h2>Embeddings</h2>
         <p class="docs-lead">
-          Эмбеддинги — для поиска по смыслу, RAG и т.&nbsp;п. Пример ниже со <strong>полным URL</strong> к нашему API. Тело: <code>model</code> (ID модели с поддержкой эмбеддингов) и
-          <code>input</code> — одна строка или массив строк. Названия моделей и цены — на <a href="/tariffs">«Тарифах»</a>;
-          тот же каталог в JSON — <code>GET /api/models</code>.
+          Эмбеддинги — поиск по смыслу, RAG и т.п. Запрос в формате, совместимом с OpenAI Embeddings API. Нужна модель с
+          <code>supportsEmbeddings: true</code> в ответе <code>GET /api/models</code> (на <a href="/tariffs">тарифах</a> —
+          вкладка «Эмбеддинги»).
         </p>
-        <pre class="docs-pre" id="docs-emb-curl-example">Загрузка…</pre>
+
+        <div class="dev-subsection" id="sec-emb-api">
+          <h3>Справочник API</h3>
+          <div class="docs-table-wrap">
+            <table class="docs-table" aria-label="Эмбеддинги: эндпоинты">
+              <thead>
+                <tr>
+                  <th>Метод</th>
+                  <th>Путь</th>
+                  <th>Назначение</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/api/v1/embeddings</code></td>
+                  <td>Основной URL в документации II Proxy</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/v1/embeddings</code></td>
+                  <td>
+                    Тот же обработчик — удобно, если клиент ожидает префикс <code>/v1</code> (как в OpenAI SDK:
+                    <code>base_url = … + "/v1"</code>)
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="docs-lead" style="margin-top: 0.75rem"><strong>Заголовки</strong>:</p>
+          <pre class="docs-pre">Authorization: Bearer &lt;iip_…&gt;
+Content-Type: application/json; charset=utf-8</pre>
+          <p class="docs-lead"><strong>Тело JSON</strong> (обязательные поля):</p>
+          <div class="docs-table-wrap">
+            <table class="docs-table" aria-label="Поля тела embeddings">
+              <thead>
+                <tr>
+                  <th>Поле</th>
+                  <th>Тип</th>
+                  <th>Описание</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>model</code></td>
+                  <td>string</td>
+                  <td>Slug модели из каталога с поддержкой эмбеддингов</td>
+                </tr>
+                <tr>
+                  <td><code>input</code></td>
+                  <td>string или массив строк</td>
+                  <td>
+                    Текст для векторизации; массив — несколько строк за один запрос (лимиты по размеру элементов и числу
+                    элементов см. на сервере)
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="docs-note">
+            Дополнительные поля из OpenAI Embeddings (<code>encoding_format</code>, <code>dimensions</code>,
+            <code>user</code> и т.д.) проксируются к провайдеру, если присутствуют в теле.
+          </p>
+          <p class="docs-lead"><strong>Типовые ответы ошибок</strong>: <code>401</code> — неверный или отозванный ключ;
+            <code>402</code> — недостаточно баланса; <code>400</code> — нет поля <code>model</code>/<code>input</code>,
+            модель не для эмбеддингов или неизвестный slug.</p>
+        </div>
+
+        <div class="dev-subsection" id="sec-emb-examples">
+          <h3>Примеры запросов</h3>
+          <p class="docs-lead"><code>curl</code> к <code>/api/v1/embeddings</code>:</p>
+          <pre class="docs-pre" id="docs-emb-curl-example">Загрузка…</pre>
+          <p class="docs-lead">Тот же запрос к OpenAI-стилю <code>/v1/embeddings</code>:</p>
+          <pre class="docs-pre" id="docs-emb-curl-v1-example">Загрузка…</pre>
+          <p class="docs-lead">Python (<code>requests</code>):</p>
+          <pre class="docs-pre" id="docs-emb-python-example">Загрузка…</pre>
+        </div>
       </section>
 
         </div>
@@ -463,6 +572,7 @@
 
       async function fillCodeExamples(base) {
         const openaiRoot = base + "/v1";
+        const anthropicApiRoot = base + "/api";
         const sel = (id) => document.getElementById(id);
         if (sel("docs-models-get")) sel("docs-models-get").textContent = "curl -sS -X GET \"" + base + '/api/models" \\\n  -H "Accept: application/json"';
         const chatUrl = base + "/api/v1/messages";
@@ -487,6 +597,22 @@
             openaiRoot +
             "\n\n(Вставьте в поле Base URL / API base провайдера OpenAI-compatible в Kilo Code, Cline и аналогах — без /chat/completions.)";
 
+        if (sel("dev-claude-code-env"))
+          sel("dev-claude-code-env").textContent =
+            [
+              'ANTHROPIC_BASE_URL="' + anthropicApiRoot + '"',
+              'ANTHROPIC_AUTH_TOKEN="iip_YOUR_KEY"',
+              'ANTHROPIC_API_KEY=""',
+              "# Базовый URL — корень /api: клиент добавляет /v1/messages → ваш /api/v1/messages.",
+              "# Как правило ключ задают в ANTHROPIC_AUTH_TOKEN; при необходимости тот же iip_…",
+              "# передайте заголовком x-api-key (сервер принимает наравне с Authorization: Bearer).",
+            ].join("\n");
+
+        if (sel("docs-url-anthropic-base")) sel("docs-url-anthropic-base").textContent = anthropicApiRoot;
+        if (sel("docs-url-v1-chat")) sel("docs-url-v1-chat").textContent = base + "/v1/chat/completions";
+        if (sel("docs-url-api-messages")) sel("docs-url-api-messages").textContent = base + "/api/v1/messages";
+        if (sel("docs-url-openai-base")) sel("docs-url-openai-base").textContent = openaiRoot;
+
         if (sel("docs-emb-curl-example"))
           sel("docs-emb-curl-example").textContent =
             'curl -sS -X POST "' +
@@ -495,6 +621,42 @@
             "'" +
             '{"model":"openai/text-embedding-3-small","input":"текст"}' +
             "'";
+        if (sel("docs-emb-curl-v1-example"))
+          sel("docs-emb-curl-v1-example").textContent =
+            'curl -sS -X POST "' +
+            base +
+            '/v1/embeddings" \\\n  -H "Authorization: Bearer iip_YOUR_KEY" \\\n  -H "Content-Type: application/json; charset=utf-8" \\\n  -d ' +
+            "'" +
+            '{"model":"openai/text-embedding-3-small","input":"текст"}' +
+            "'";
+
+        if (sel("docs-emb-python-example")) {
+          const epy = [
+            "# pip install requests",
+            "",
+            "import requests",
+            "",
+            'API_KEY = "iip_YOUR_KEY"',
+            'BASE = "' + base + '"',
+            "",
+            "payload = {",
+            '    "model": "openai/text-embedding-3-small",',
+            '    "input": "Пример текста для эмбеддинга.",',
+            "}",
+            "r = requests.post(",
+            "    BASE + \"/v1/embeddings\",",
+            "    headers={",
+            '        "Authorization": f"Bearer {API_KEY}",',
+            '        "Content-Type": "application/json; charset=utf-8",',
+            "    },",
+            "    json=payload,",
+            "    timeout=120,",
+            ")",
+            "r.raise_for_status()",
+            "print(r.json())",
+          ].join("\n");
+          sel("docs-emb-python-example").textContent = epy;
+        }
 
         const pyExample = [
           "# pip install requests",
@@ -699,11 +861,13 @@
           "sec-keys",
           "sec-examples",
           "sec-examples-python",
+          "sec-more",
           "sec-vibe",
           "sec-vibe-kilo",
           "sec-vibe-cline",
           "sec-embeddings",
-          "sec-more",
+          "sec-emb-api",
+          "sec-emb-examples",
         ];
         const links = Array.from(document.querySelectorAll("a.dev-toc-link"));
         if (!links.length) return;

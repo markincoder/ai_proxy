@@ -9,7 +9,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from ..billing import compute_spend_rub, estimate_min_spend_rub
+from ..anthropic_bridge import (
+    anthropic_request_to_internal_dict,
+    is_anthropic_messages_request,
+    iter_openai_sse_to_anthropic_sse,
+    openai_completion_to_anthropic_message,
+)
 from ..database import SessionLocal
 from ..deps import resolve_user_id
 from ..error_logging import log_upstream_request_failure
@@ -495,7 +500,15 @@ async def post_messages(request: Request):
     if "multipart/form-data" in ct:
         return await _handle_multipart(request)
     try:
-        body = ChatJsonBody.model_validate(await request.json())
+        raw = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from e
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Expected JSON object")
+    if is_anthropic_messages_request(raw):
+        return await _post_messages_anthropic_wire(request, raw)
+    try:
+        body = ChatJsonBody.model_validate(raw)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     msg_dicts = [m.model_dump() for m in body.messages]
@@ -610,6 +623,9 @@ async def _handle_chat_json(
     body: ChatJsonBody,
     user_id: str | None,
     model: AiModel,
+    *,
+    anthropic_wire: bool = False,
+    anthropic_model_label: str | None = None,
 ) -> StreamingResponse | JSONResponse:
     raw_msgs = [m.model_dump() for m in body.messages]
     if _messages_contain_input_audio(raw_msgs) and not model.supports_speech:
@@ -682,8 +698,76 @@ async def _handle_chat_json(
                     data.get("id"),
                     f"chat {body.model_slug}",
                 )
+        if anthropic_wire:
+            return JSONResponse(
+                content=openai_completion_to_anthropic_message(
+                    data, model=anthropic_model_label or body.model_slug
+                )
+            )
         data["meta"] = {"costRub": str(cost), "modelSlug": body.model_slug}
         return JSONResponse(content=data)
+
+    if anthropic_wire:
+        amodel = anthropic_model_label or body.model_slug
+
+        async def stream_anthropic() -> AsyncIterator[bytes]:
+            acc: dict[str, Any] = {}
+            try:
+                async with openrouter_async_client() as client:
+                    async with client.stream(
+                        "POST",
+                        f"{openrouter_base_url()}/chat/completions",
+                        headers=openrouter_headers(True),
+                        json=payload,
+                    ) as resp:
+                        if resp.status_code >= 400:
+                            err = await resp.aread()
+                            text = err.decode("utf-8", errors="replace")[:2000]
+                            err_b = (
+                                f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": text}}, ensure_ascii=False)}\n\n'
+                            ).encode("utf-8")
+                            yield err_b
+                            yield b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                            return
+                        async for out_b in iter_openai_sse_to_anthropic_sse(
+                            resp.aiter_bytes(),
+                            model=amodel,
+                            acc=acc,
+                        ):
+                            yield out_b
+            except httpx.RequestError as exc:
+                log_upstream_request_failure("chat.stream.anthropic", exc)
+                yield _sse_upstream_error(_MSG_NO_UPSTREAM)
+                return
+
+            cost = compute_spend_rub(model, acc.get("usage"))
+            if user_id:
+                with SessionLocal() as db:
+                    record_spend(
+                        db,
+                        user_id,
+                        cost,
+                        acc.get("id"),
+                        f"stream {body.model_slug} anthropic",
+                    )
+            billing = json.dumps(
+                {
+                    "costRub": str(cost),
+                    "openRouterRequestId": acc.get("id"),
+                    "modelSlug": body.model_slug,
+                },
+                ensure_ascii=False,
+            )
+            yield f"event: billing\ndata: {billing}\n\n".encode("utf-8")
+
+        return StreamingResponse(
+            stream_anthropic(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+            },
+        )
 
     async def stream_with_billing() -> AsyncIterator[bytes]:
         line_carry = ""
@@ -742,4 +826,49 @@ async def _handle_chat_json(
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
         },
+    )
+
+
+async def _post_messages_anthropic_wire(
+    request: Request, raw: dict[str, Any]
+) -> StreamingResponse | JSONResponse:
+    """Claude Code / Anthropic Messages: model + max_tokens, без modelSlug."""
+    try:
+        internal = anthropic_request_to_internal_dict(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        body = ChatJsonBody.model_validate(internal)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    msg_dicts = [m.model_dump() for m in body.messages]
+    with SessionLocal() as db:
+        model = (
+            db.query(AiModel)
+            .filter(AiModel.slug == body.model_slug, AiModel.is_active.is_(True))
+            .first()
+        )
+        if not model:
+            raise HTTPException(status_code=404, detail="Unknown or inactive model")
+        if not model.supports_chat:
+            raise HTTPException(
+                status_code=400,
+                detail="Модель только для эмбеддингов; используйте POST /api/v1/embeddings.",
+            )
+        if _messages_contain_input_audio(msg_dicts) and not model.supports_speech:
+            raise HTTPException(
+                status_code=400,
+                detail="Аудио на входе доступно только для моделей с поддержкой речи в чате.",
+            )
+        msgs_est = _messages_for_estimate(msg_dicts)
+        user_id = _resolve_user_for_model(
+            request, db, model, msgs_est, raw_messages=msg_dicts
+        )
+    label = str(raw.get("model") or "").strip() or body.model_slug
+    return await _handle_chat_json(
+        body,
+        user_id,
+        model,
+        anthropic_wire=True,
+        anthropic_model_label=label,
     )

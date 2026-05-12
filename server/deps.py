@@ -70,7 +70,7 @@ def require_user_id(request: Request, db: Session = Depends(get_db)) -> str:
 
 
 def resolve_user_id(request: Request, db: Session) -> Optional[str]:
-    """Сессия, внутренний вызов (бот) или ключ разработчика Authorization: Bearer iip_…"""
+    """Сессия, внутренний вызов (бот), ключ разработчика (Authorization: Bearer или x-api-key: iip_…)."""
     secret = get_settings().internal_api_secret
     h_secret = request.headers.get("x-internal-secret")
     h_user = request.headers.get("x-user-id")
@@ -80,6 +80,22 @@ def resolve_user_id(request: Request, db: Session) -> Optional[str]:
             if u.is_blocked == 1:
                 raise HTTPException(status_code=403, detail=blocked_user_detail(u))
             return h_user
+    x_ak = (request.headers.get("x-api-key") or "").strip()
+    if x_ak.startswith("iip_"):
+        token = x_ak
+        if len(token) < 20:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        h = hash_api_key(token)
+        row = db.query(UserApiKey).filter(UserApiKey.key_hash == h).first()
+        if row and row.revoked_at is None:
+            u = db.query(User).filter(User.id == row.user_id).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid API key")
+            if u.is_blocked == 1:
+                raise HTTPException(status_code=403, detail=blocked_user_detail(u))
+            return row.user_id
+        raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+
     auth_h = request.headers.get("authorization")
     if auth_h:
         parts = auth_h.split(None, 1)
