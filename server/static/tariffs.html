@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=70" />
+    <link rel="stylesheet" href="/static/css/style.css?v=72" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
@@ -43,6 +43,10 @@
     <footer class="site-footer">II Proxy</footer>
 
     <script>
+      /** Как в chat.js — текущая модель в чате (sessionStorage). */
+      const MODEL_SS_KEY = "ai_proxy_model_slug";
+      const EXPLICIT_MODEL_SS_KEY = "ai_proxy_explicit_model";
+
       const MODEL_GROUPS = [
         { id: "free", emoji: "🎁", title: "Бесплатные" },
         { id: "text", emoji: "💬", title: "Текст и чат" },
@@ -270,6 +274,7 @@
           .join(" ")
           .toLowerCase();
         art.setAttribute("data-filter-text", ft);
+        if (slug) art.setAttribute("data-model-slug", slug);
         art.innerHTML = modelCardHtml(m, showCategory);
         grid.appendChild(art);
       }
@@ -440,13 +445,11 @@
             if (gid) activateTab(gid);
           });
 
-          const MODEL_KEY = "ai_proxy_model_slug";
-          const EXPLICIT_KEY = "ai_proxy_explicit_model";
           function rememberModelChoice(modelId) {
             if (!modelId) return;
             try {
-              sessionStorage.setItem(MODEL_KEY, modelId);
-              sessionStorage.setItem(EXPLICIT_KEY, "1");
+              sessionStorage.setItem(MODEL_SS_KEY, modelId);
+              sessionStorage.setItem(EXPLICIT_MODEL_SS_KEY, "1");
             } catch {
               /* ignore */
             }
@@ -458,6 +461,83 @@
               rememberModelChoice(id);
             }
           });
+
+          function cssEsc(s) {
+            return typeof CSS !== "undefined" && typeof CSS.escape === "function"
+              ? CSS.escape(String(s))
+              : String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          }
+
+          /** Вернуться с / : выбрать вкладку с моделью из чата, подсветить карточку, прокрутить и фокус. */
+          function focusStoredChatModelOnTariffs() {
+            let slug = "";
+            try {
+              slug = (sessionStorage.getItem(MODEL_SS_KEY) || "").trim();
+            } catch {
+              return;
+            }
+            if (!slug) return;
+            const model = models.find((x) => String(x.slug) === slug);
+            if (!model) return;
+
+            if (filterInput && filterInput.value.trim()) {
+              filterInput.value = "";
+              applyTariffsFilter();
+            }
+
+            const tabId = primaryModelTabId(model);
+            const tryPanel = (gid) => {
+              const panel = panelsRoot.querySelector(`.tariffs-panel[data-group="${cssEsc(gid)}"]`);
+              if (!panel) return null;
+              const art = panel.querySelector(`article.tariff-card[data-model-slug="${cssEsc(slug)}"]`);
+              if (!art || art.hasAttribute("hidden") || art.classList.contains("tariff-card--hidden"))
+                return null;
+              return art;
+            };
+
+            let card = tryPanel(tabId);
+            if (!card && tabGroups.some((g) => g.id === "all")) {
+              card = tryPanel("all");
+            }
+            if (!card) {
+              for (const g of tabGroups) {
+                card = tryPanel(g.id);
+                if (card) break;
+              }
+            }
+            if (!card) return;
+
+            const gidForCard = card.closest(".tariffs-panel")?.dataset?.group;
+            if (gidForCard) activateTab(gidForCard);
+
+            panelsRoot.querySelectorAll("article.tariff-card.tariff-card--chat-selected").forEach((el) => {
+              el.classList.remove("tariff-card--chat-selected");
+            });
+            card.classList.add("tariff-card--chat-selected");
+
+            const focusLink = card.querySelector("a.tariff-open-chat");
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                try {
+                  card.scrollIntoView({ behavior: "smooth", block: "center" });
+                } catch {
+                  card.scrollIntoView();
+                }
+                try {
+                  if (focusLink) {
+                    focusLink.focus({ preventScroll: true });
+                  } else {
+                    card.setAttribute("tabindex", "-1");
+                    card.focus({ preventScroll: true });
+                  }
+                } catch {
+                  /* ignore */
+                }
+              });
+            });
+          }
+
+          focusStoredChatModelOnTariffs();
         })
         .catch((e) => {
           console.error(e);

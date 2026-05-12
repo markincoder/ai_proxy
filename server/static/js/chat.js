@@ -363,20 +363,6 @@ function primaryModelGroupId(m) {
   return "text";
 }
 
-/** Несколько вкладок пикера (пересечение возможностей), кроме тривиального «Бесплатные» + «Текст и чат». */
-function modelAppearsInMultiplePickerTabs(m) {
-  const ids = modelGroupIds(m);
-  if (ids.length < 2) return false;
-  if (ids.length === 2 && ids.includes("free") && ids.includes("text")) return false;
-  return true;
-}
-
-function modelPickerTabTitlesJoined(m) {
-  const ids = modelGroupIds(m);
-  const titles = MODEL_GROUPS.filter((g) => ids.includes(g.id)).map((g) => g.title);
-  return titles.join(" · ");
-}
-
 /** @deprecated Совместимость: одна «главная» вкладка. */
 function modelGroupId(m) {
   return primaryModelGroupId(m);
@@ -1085,7 +1071,13 @@ async function main() {
       btn.setAttribute("aria-checked", on ? "true" : "false");
     });
     const sel = chatModels.find((x) => x.slug === slug);
-    if (sel) activateModelTab(primaryModelGroupId(sel));
+    if (sel) {
+      const activeTab = modelPickerEl.querySelector(".model-tab.model-tab--active");
+      const currentGid = activeTab?.dataset?.group ?? "";
+      const keepTab =
+        Boolean(currentGid) && modelGroupIds(sel).includes(currentGid);
+      if (!keepTab) activateModelTab(primaryModelGroupId(sel));
+    }
 
     /** Видимая панель, иначе первая копия модели среди вкладок. */
     let picked = null;
@@ -1489,32 +1481,15 @@ async function main() {
     }
   }
 
-  const imgGenHintEl = document.getElementById("img-gen-hint");
   const sttModeHintEl = document.getElementById("stt-mode-hint");
-  const multiCategoryHintEl = document.getElementById("multi-category-hint");
   const musicTextHintEl = document.getElementById("music-text-hint");
   const videoModeHintEl = document.getElementById("video-mode-hint");
   function updateHints() {
     const m = selectedModel();
     if (!m) return;
     const vid = m.supportsVideoGeneration === true;
-    if (imgGenHintEl) {
-      imgGenHintEl.style.display =
-        m.supportsImageGeneration === true && m.supportsVideoGeneration !== true
-          ? "block"
-          : "none";
-    }
     if (sttModeHintEl) {
       sttModeHintEl.style.display = !vid && isSttOnlyModel(m) ? "block" : "none";
-    }
-    if (multiCategoryHintEl) {
-      const showMulti = !vid && modelAppearsInMultiplePickerTabs(m);
-      multiCategoryHintEl.style.display = showMulti ? "block" : "none";
-      if (showMulti) {
-        const tabs = escapeHtml(modelPickerTabTitlesJoined(m));
-        multiCategoryHintEl.innerHTML =
-          `Эта модель относится к <strong>нескольким разделам</strong> пикера (${tabs}). То же название есть и в других подходящих вкладках — переключайте их над списком карточек.`;
-      }
     }
     if (musicTextHintEl) {
       musicTextHintEl.style.display =

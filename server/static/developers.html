@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Разработчикам — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=68" />
+    <link rel="stylesheet" href="/static/css/style.css?v=72" />
     <style>
       .dev-doc-page {
         padding-left: 0;
@@ -238,7 +238,7 @@
         <p class="docs-lead">
           II Proxy принимает запросы на <strong>наш сервер</strong>, списывает стоимость с баланса вашего аккаунта и
           проксирует вызов к моделям через <strong>OpenAI-совместимый</strong> интерфейс (чат и эмбеддинги).
-          Нужны <strong>ключ <code>iip_…</code></strong> и <strong>slug</strong> модели из нашего каталога
+          Нужны <strong>ключ <code>iip_…</code></strong> и <strong>ID</strong> модели из нашего каталога
           (например, <code>openai/gpt-5.4</code>).
         </p>
         <p class="docs-lead">
@@ -306,7 +306,7 @@
         <pre class="docs-pre" id="docs-models-get">Загрузка…</pre>
 
         <p class="docs-lead">
-          Чат приложения — <code>POST /api/v1/messages</code>, в теле поле <code>modelSlug</code> (не <code>model</code>).
+          Чат приложения — <code>POST /api/v1/messages</code>, в теле поле <code>modelID</code> (не <code>model</code>).
           Опционально: <code>temperature</code> и <code>max_tokens</code> или <code>maxTokens</code> — те же поля
           уходят в запрос к модели; для IDE используйте <code>POST …/v1/chat/completions</code> с
           <code>temperature</code> и <code>max_tokens</code> в стиле OpenAI.
@@ -326,6 +326,34 @@
         </div>
 
       </section>
+      <section class="docs-section" id="sec-more">
+        <h2>Озвучка и изображения</h2>
+        <h3 style="font-size: 1rem; margin: 0.75rem 0 0.35rem">Озвучка ответа (опционально)</h3>
+        <p class="docs-lead">
+          В <code>POST …/api/v1/messages</code> можно передать <code>"ttsVoice": "nova"</code> и т.д. — те же голоса,
+          что во встроенном чате: <code>alloy</code>, <code>echo</code>, <code>fable</code>, <code>onyx</code>,
+          <code>nova</code>, <code>shimmer</code>.
+        </p>
+        <pre class="docs-pre">{
+  "modelSlug": "…",
+  "stream": true,
+  "ttsVoice": "nova",
+  "messages": [ … ]
+}</pre>
+
+        <h3 style="font-size: 1rem; margin: 1rem 0 0.35rem">Генерация изображений</h3>
+        <p class="docs-lead">
+          Тот же <code>POST …/api/v1/messages</code>, модель с <code>supportsImageGeneration</code> — см.
+          <a href="/tariffs">«Тарифы»</a> или <code>GET /api/models</code>. Прокси включает
+          <code>modalities: ["image", "text"]</code>.
+        </p>
+        <pre class="docs-pre" id="docs-image-curl-example">Загрузка…</pre>
+        <p class="docs-lead">На Python:</p>
+        <pre class="docs-pre" id="docs-image-python-example">Загрузка…</pre>
+        <p class="docs-note">Поток: <code>curl -N</code> или цикл по строкам, как в примере с потоком в разделе «Примеры».</p>
+
+      </section>
+
 
       <section class="docs-section" id="sec-vibe">
         <h2>Vibe coding</h2>
@@ -354,7 +382,7 @@
             Заполните поля: короткий <strong>ID провайдера</strong> латиницей (например <code>iiproxy</code>),
             <strong>отображаемое имя</strong> на ваш вкус, <strong>базовый URL</strong> — строка из блока выше,
             <strong>API-ключ</strong> — <code>iip_…</code>. Затем <strong>добавьте модель</strong>:
-            в <strong>model-id</strong> вставьте slug из <a href="/tariffs">«Тарифов»</a> (тот же id, что в
+            в <strong>model-id</strong> вставьте ID из <a href="/tariffs">«Тарифов»</a> (тот же id, что в
             <code>GET /api/models</code>), в «отображаемое имя» — удобное название для списка в чате. 
             Подойдет любая модель из раздела "Текст и чат" на странице "Тарифы", но рекомендуем использовать "сильную" модель, например "anthropic/claude-opus-4.7"  или "openai/gpt-5.5".
           </p>
@@ -374,7 +402,7 @@
           <p class="docs-lead">
             <strong>API Provider:</strong> <strong>OpenAI Compatible</strong>. Укажите
             <strong>Base URL</strong> из блока выше, <strong>API Key</strong> — <code>iip_…</code>,
-            <strong>Model ID</strong> — slug модели целиком. Подойдет любая модель из раздела "Текст и чат" на странице "Тарифы", но рекомендуем использовать "сильную" модель, например "anthropic/claude-opus-4.7"  или "openai/gpt-5.5". 
+            <strong>Model ID</strong> — ID модели целиком. Подойдет любая модель из раздела "Текст и чат" на странице "Тарифы", но рекомендуем использовать "сильную" модель, например "anthropic/claude-opus-4.7"  или "openai/gpt-5.5". 
             Правила проекта можно задать через интерфейс Cline (иконка весов в чате)
             или файлы вроде <code>.clinerules</code> — см. документацию расширения.
           </p>
@@ -396,40 +424,13 @@
       <section class="docs-section" id="sec-embeddings">
         <h2>Embeddings</h2>
         <p class="docs-lead">
-          Эмбеддинги — для поиска по смыслу, RAG и т.&nbsp;п. Пример ниже со <strong>полным URL</strong> к нашему API. Тело: <code>model</code> (slug модели с поддержкой эмбеддингов) и
+          Эмбеддинги — для поиска по смыслу, RAG и т.&nbsp;п. Пример ниже со <strong>полным URL</strong> к нашему API. Тело: <code>model</code> (ID модели с поддержкой эмбеддингов) и
           <code>input</code> — одна строка или массив строк. Названия моделей и цены — на <a href="/tariffs">«Тарифах»</a>;
           тот же каталог в JSON — <code>GET /api/models</code>.
         </p>
         <pre class="docs-pre" id="docs-emb-curl-example">Загрузка…</pre>
       </section>
 
-      <section class="docs-section" id="sec-more">
-        <h2>Озвучка и изображения</h2>
-        <h3 style="font-size: 1rem; margin: 0.75rem 0 0.35rem">Озвучка ответа (опционально)</h3>
-        <p class="docs-lead">
-          В <code>POST …/api/v1/messages</code> можно передать <code>"ttsVoice": "nova"</code> и т.д. — те же голоса,
-          что во встроенном чате: <code>alloy</code>, <code>echo</code>, <code>fable</code>, <code>onyx</code>,
-          <code>nova</code>, <code>shimmer</code>.
-        </p>
-        <pre class="docs-pre">{
-  "modelSlug": "…",
-  "stream": true,
-  "ttsVoice": "nova",
-  "messages": [ … ]
-}</pre>
-
-        <h3 style="font-size: 1rem; margin: 1rem 0 0.35rem">Генерация изображений</h3>
-        <p class="docs-lead">
-          Тот же <code>POST …/api/v1/messages</code>, модель с <code>supportsImageGeneration</code> — см.
-          <a href="/tariffs">«Тарифы»</a> или <code>GET /api/models</code>. Прокси включает
-          <code>modalities: ["image", "text"]</code>.
-        </p>
-        <pre class="docs-pre" id="docs-image-curl-example">Загрузка…</pre>
-        <p class="docs-lead">На Python:</p>
-        <pre class="docs-pre" id="docs-image-python-example">Загрузка…</pre>
-        <p class="docs-note">Поток: <code>curl -N</code> или цикл по строкам, как в примере с потоком в разделе «Примеры».</p>
-
-      </section>
         </div>
       </div>
     </main>

@@ -1993,7 +1993,8 @@ select.settings-select {
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    gap: 0.28rem;
+    /* как у .model-tabs: одинаковый шаг «чипов» со строкой категорий моделей */
+    gap: 0.3rem;
     padding-bottom: 0.06rem;
   }
 
@@ -2001,19 +2002,26 @@ select.settings-select {
     display: none;
   }
 
+  /* Те же метрики, что у .model-tab в этом брейкпоинте (высота/шрифт/бордер в боксовой модели) */
   .nav-link {
-    min-height: 2.55rem;
-    padding: 0.4rem 0.72rem;
+    min-height: 2.6rem;
+    padding: 0.45rem 0.8rem;
     font-size: 0.875rem;
     font-weight: 500;
     align-items: center;
     flex-shrink: 0;
+    border: 1px solid transparent;
+  }
+
+  .nav-link.active {
+    border-color: #c7d2fe;
+    box-shadow: var(--shadow-sm);
   }
 
   .nav-actions .btn,
   .nav-actions .btn-primary,
   .nav-actions .btn-accent {
-    min-height: 2.55rem;
+    min-height: 2.6rem;
     padding: 0.4rem 0.75rem;
     font-size: 0.875rem;
   }
@@ -2694,6 +2702,13 @@ select.settings-select {
 .tariff-card.tariff-card--hidden,
 article.tariff-card[hidden] {
   display: none !important;
+}
+
+/** Модель, выбранная в чате — при открытии /tariffs подсветка и прокрутка */
+.tariff-card.tariff-card--chat-selected {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, #f8faff 0%, #fff 100%);
+  box-shadow: 0 2px 14px rgba(79, 70, 229, 0.16);
 }
 
 .tariff-card-head {
