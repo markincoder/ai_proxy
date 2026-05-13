@@ -288,6 +288,7 @@ def yandex_oauth_callback(
 
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
+    request.session.pop("oauth_terms_ok", None)
     request.session["user_id"] = user.id
     touch_user_last_login(db, user.id)
     return RedirectResponse(url="/", status_code=302)
@@ -387,6 +388,7 @@ def vk_oauth_callback(
         )
     if user.is_blocked == 1:
         return _login_blocked_redirect(user)
+    request.session.pop("oauth_terms_ok", None)
     request.session["user_id"] = user.id
     touch_user_last_login(db, user.id)
     return RedirectResponse(url="/", status_code=302)

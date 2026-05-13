@@ -7,13 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=72" />
+    <link rel="stylesheet" href="/static/css/style.css?v=78" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=8" defer></script>
+    <script src="/static/js/site-header.js?v=10" defer></script>
 
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
@@ -49,14 +49,18 @@
 
       const MODEL_GROUPS = [
         { id: "free", emoji: "🎁", title: "Бесплатные" },
+        { id: "favorite", emoji: "⭐", title: "Избранное" },
         { id: "text", emoji: "💬", title: "Текст и чат" },
         { id: "image", emoji: "🖼", title: "Изображения в чате" },
         { id: "video", emoji: "🎬", title: "Видео" },
         { id: "transcription", emoji: "📝", title: "Транскрипция" },
-        { id: "speech", emoji: "🎙️", title: "Речь в чате" },
+        { id: "speech", emoji: "🎙️", title: "Голос" },
         { id: "music", emoji: "🎵", title: "Музыка" },
         { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
       ];
+
+      /** Синхронизация с чатом: звёздочки / избранное */
+      let favSetGlobal = new Set();
 
       function isSttOnlyTariffModel(m) {
         return (
@@ -66,6 +70,11 @@
           m.supportsImageGeneration !== true &&
           m.supportsVideoGeneration !== true
         );
+      }
+
+      function modelProducesSpokenChatAudio(m) {
+        const s = String(m.slug || "").toLowerCase();
+        return m.supportsSpeech === true && s.includes("gpt-audio");
       }
 
       function modelGroupIds(m) {
@@ -82,22 +91,27 @@
         if (m.isFree === true) push("free");
         if (m.supportsVideoGeneration === true) push("video");
         if (m.supportsImageGeneration === true) push("image");
-        if (m.supportsSpeech === true) push("speech");
+        if (modelProducesSpokenChatAudio(m)) push("speech");
         if (m.supportsTranscription === true) push("transcription");
         if (m.supportsMusicGeneration === true) push("music");
 
-        const textOk = m.supportsChat !== false && !isSttOnlyTariffModel(m);
+        const textOk =
+          m.supportsChat !== false &&
+          !isSttOnlyTariffModel(m) &&
+          m.supportsMusicGeneration !== true;
         if (textOk) push("text");
 
         if (out.length === 0) push("text");
         return out;
       }
 
-      function primaryModelTabId(m) {
+      function primaryModelTabId(m, favSet) {
+        if (m.supportsEmbeddings === true && m.supportsChat === false) return "embeddings";
         const ids = modelGroupIds(m);
+        const slug = String(m?.slug || "");
         const order = [
-          "embeddings",
           "free",
+          "favorite",
           "video",
           "image",
           "speech",
@@ -106,21 +120,32 @@
           "text",
         ];
         for (const id of order) {
+          if (id === "favorite") {
+            if (favSet && typeof favSet.has === "function" && slug && favSet.has(slug)) {
+              return "favorite";
+            }
+            continue;
+          }
           if (ids.includes(id)) return id;
         }
         return "text";
       }
 
       /** Для вкладки «Все»: перечень разделов, где есть модель. */
-      function categoryTitlesJoined(m) {
+      function categoryTitlesJoined(m, favSet) {
         const ids = modelGroupIds(m);
         const titles = MODEL_GROUPS.filter((x) => ids.includes(x.id)).map((x) => x.title);
-        return titles.length ? titles.join(" · ") : primaryModelTabId(m);
+        let s = titles.length ? titles.join(" · ") : primaryModelTabId(m, favSet);
+        if (favSet && favSet.has(String(m.slug || ""))) {
+          s = s ? `${s} · Избранное` : "Избранное";
+        }
+        return s;
       }
 
       function modelProducesChatAudio(m) {
         const s = String(m.slug || "").toLowerCase();
         if (s.includes("lyria")) return true;
+        if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
         return m.supportsSpeech === true && m.supportsMusicGeneration === true;
       }
 
@@ -129,7 +154,7 @@
         if (c.free) return "Бесплатно";
         if (c.videoGeneration) return "Видео (сек., разреш., звук)";
         if (c.imageGeneration) return "Картинка в чате (токены)";
-        if (c.speech) return "Речь / аудио в чате";
+        if (c.speech) return "Голос · озвучка";
         if (c.transcription) return "Транскрипция (отдельный API)";
         if (c.embeddings === true && c.chat === false) return "Эмбеддинги (отдельный API)";
         if (c.musicGeneration) return "Музыка";
@@ -230,7 +255,16 @@
         return Number(x).toLocaleString("ru-RU", { maximumFractionDigits: 4 });
       }
 
-      function modelCardHtml(m, showCategory) {
+      function cssEsc(s) {
+        return typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(String(s))
+          : String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      }
+
+      /** Обновляется после загрузки каталога (см. fetch). */
+      let applyTariffsFilterRef = () => {};
+
+      function modelCardHtml(m, showCategory, isFav) {
         const embedOnly = m.supportsEmbeddings === true && m.supportsChat === false;
         const chatHref = `/?model=${encodeURIComponent(m.slug)}`;
         const sttOnly =
@@ -239,8 +273,9 @@
           !m.capabilities?.musicGeneration &&
           !m.capabilities?.imageGeneration &&
           !m.capabilities?.videoGeneration;
+        const catJoined = categoryTitlesJoined(m, favSetGlobal);
         const metaLine = showCategory
-          ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(categoryTitlesJoined(m))}</span> · <code>${escape(m.slug)}</code>`
+          ? `${escape(m.provider)} · <span class="tariff-card-cat">${escape(catJoined)}</span> · <code>${escape(m.slug)}</code>`
           : `${escape(m.provider)} · <code>${escape(m.slug)}</code>`;
         const chatFooter = embedOnly
           ? `<p class="tariff-price-hint">Только эмбеддинги: <code>POST /api/v1/embeddings</code> или IDE с base URL …<code>/v1</code> и <code>POST /v1/embeddings</code>; ключ как для чата.</p>`
@@ -248,10 +283,20 @@
             (sttOnly
               ? `<p class="tariff-price-hint">Только распознавание: во вкладке «Транскрипция» — микрофон или аудио 📎. Диалог — другие модели; API: <code>POST /api/v1/transcribe</code>.</p>`
               : "");
+        const starFill = isFav ? "★" : "☆";
+        const starPressed = isFav ? "true" : "false";
+        const starLabel = isFav ? "Убрать из избранного" : "В избранное";
         return `
                 <div class="tariff-card-head">
                   <h3 class="tariff-card-title">${escape(m.displayName)}</h3>
-                  <span class="tariff-billing-badge">${escape(billingBadge(m))}</span>
+                  <div class="tariff-card-head-actions">
+                    <span class="model-favorite-star tariff-favorite-star${
+                      isFav ? " model-favorite-star--active" : ""
+                    }" role="button" tabindex="0" data-model-slug="${escape(
+                      m.slug,
+                    )}" aria-pressed="${starPressed}" aria-label="${escape(starLabel)}"><span class="model-favorite-star__icon" aria-hidden="true">${starFill}</span></span>
+                    <span class="tariff-billing-badge">${escape(billingBadge(m))}</span>
+                  </div>
                 </div>
                 <div class="tariff-meta">${metaLine}</div>
                 ${
@@ -269,21 +314,108 @@
         art.className = "card tariff-card";
         const slug = m.slug != null ? String(m.slug) : "";
         const slugWords = slug.replace(/[/\-_:]/g, " ");
-        const ft = [m.displayName, slug, slugWords, m.provider, categoryTitlesJoined(m)]
+        const ft = [
+          m.displayName,
+          slug,
+          slugWords,
+          m.provider,
+          categoryTitlesJoined(m, favSetGlobal),
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
         art.setAttribute("data-filter-text", ft);
         if (slug) art.setAttribute("data-model-slug", slug);
-        art.innerHTML = modelCardHtml(m, showCategory);
+        const isFv = slug && favSetGlobal.has(slug);
+        art.innerHTML = modelCardHtml(m, showCategory, isFv);
+        const starEl = art.querySelector(".tariff-favorite-star");
+        if (starEl && slug) {
+          const activateStar = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            import("/static/js/model-favorites.js?v=2").then((fav) => {
+              fav.toggleFavoriteSlug(slug, modelsRef.map((x) => x.slug));
+              favSetGlobal = fav.getFavoriteSetForCatalog(modelsRef.map((x) => x.slug));
+              panelsRootRef
+                .querySelectorAll(`.tariff-favorite-star[data-model-slug="${cssEsc(slug)}"]`)
+                .forEach((el) => {
+                  fav.syncFavoriteStarButton(el, favSetGlobal.has(slug));
+                });
+              rebuildFavoritePanelTariffs();
+              applyTariffsFilterRef();
+            });
+          };
+          starEl.addEventListener("click", activateStar);
+          starEl.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") activateStar(ev);
+          });
+        }
         grid.appendChild(art);
       }
 
-      fetch("/api/models")
-        .then((r) => r.json())
-        .then((models) => {
-          const buckets = { free: [], text: [], embeddings: [], image: [], video: [], transcription: [], speech: [], music: [] };
+      let modelsRef = [];
+
+      let panelsRootRef = null;
+
+      function rebuildFavoritePanelTariffs() {
+        const panel = panelsRootRef && panelsRootRef.querySelector('.tariffs-panel[data-group="favorite"]');
+        if (!panel) return;
+        const oldBlocks = panel.querySelectorAll(".tariffs-grid, .tariffs-favorite-empty");
+        oldBlocks.forEach((n) => n.remove());
+        const favModels = modelsRef
+          .filter((m) => favSetGlobal.has(String(m.slug || "")))
+          .sort((a, b) =>
+            String(a.displayName).localeCompare(String(b.displayName), "ru"),
+          );
+        if (favModels.length === 0) {
+          const p = document.createElement("p");
+          p.className = "hint tariffs-favorite-empty";
+          p.style.margin = "0 0 1rem";
+          p.textContent =
+            "Пока пусто. Нажмите ☆ на карточке модели здесь или в чате — она появится в избранном.";
+          panel.appendChild(p);
+          return;
+        }
+        const grid = document.createElement("div");
+        grid.className = "tariffs-grid";
+        for (const m of favModels) {
+          appendModelToGrid(grid, m, false);
+        }
+        panel.appendChild(grid);
+      }
+
+      Promise.all([
+        fetch("/api/models").then((r) => r.json()),
+        import("/static/js/model-favorites.js?v=2"),
+        fetch("/api/auth/me")
+          .then((r) => (r.ok ? r.json() : { guest: true }))
+          .catch(() => ({ guest: true })),
+      ])
+        .then(async ([models, favMod, me]) => {
+          const catalogSlugs = models.map((x) => String(x.slug || ""));
+          if (me && me.guest === false) {
+            favMod.setModelFavoritesServerSync(true);
+            await favMod.hydrateModelFavoritesFromServer(catalogSlugs);
+          } else {
+            favMod.setModelFavoritesServerSync(false);
+          }
+          favSetGlobal = favMod.getFavoriteSetForCatalog(catalogSlugs);
+          modelsRef = models;
+
+          const buckets = {
+            free: [],
+            favorite: [],
+            text: [],
+            embeddings: [],
+            image: [],
+            video: [],
+            transcription: [],
+            speech: [],
+            music: [],
+          };
           for (const m of models) {
+            const slug = String(m.slug || "");
+            if (slug && favSetGlobal.has(slug)) buckets.favorite.push(m);
             for (const gid of modelGroupIds(m)) {
               if (Object.prototype.hasOwnProperty.call(buckets, gid)) buckets[gid].push(m);
             }
@@ -301,13 +433,17 @@
           const tabGroups = [];
           if (models.length > 0) {
             tabGroups.push({ id: "all", emoji: "📋", title: "Все" });
+            const favG = MODEL_GROUPS.find((x) => x.id === "favorite");
+            if (favG) tabGroups.push(favG);
           }
           for (const g of MODEL_GROUPS) {
+            if (g.id === "favorite") continue;
             if (buckets[g.id].length > 0) tabGroups.push(g);
           }
 
           const tablist = document.getElementById("tariffs-tablist");
           const panelsRoot = document.getElementById("tariffs-panels");
+          panelsRootRef = panelsRoot;
           tablist.innerHTML = "";
           panelsRoot.innerHTML = "";
 
@@ -362,7 +498,23 @@
             const showCat = g.id === "all";
             const modelList = g.id === "all" ? allSorted : buckets[g.id];
 
-            if (g.id === "music") {
+            if (g.id === "favorite") {
+              if (modelList.length === 0) {
+                const p = document.createElement("p");
+                p.className = "hint tariffs-favorite-empty";
+                p.style.margin = "0 0 1rem";
+                p.textContent =
+                  "Пока пусто. Нажмите ☆ на карточке модели здесь или в чате — она появится в избранном.";
+                panel.appendChild(p);
+              } else {
+                const grid = document.createElement("div");
+                grid.className = "tariffs-grid";
+                for (const m of modelList) {
+                  appendModelToGrid(grid, m, showCat);
+                }
+                panel.appendChild(grid);
+              }
+            } else if (g.id === "music") {
               const audioMs = modelList.filter((m) => modelProducesChatAudio(m));
               const textMs = modelList.filter((m) => !modelProducesChatAudio(m));
               function addMusicSubsection(title, models) {
@@ -381,23 +533,18 @@
               addMusicSubsection("Генерация аудио", audioMs);
               addMusicSubsection("Только текст (без готового звука)", textMs);
             } else if (g.id === "speech") {
-              const audioOutMs = modelList.filter((m) => modelProducesChatAudio(m));
-              const speechInTextOutMs = modelList.filter((m) => !modelProducesChatAudio(m));
-              function addSpeechSubsection(title, models) {
-                if (models.length === 0) return;
-                const lab = document.createElement("p");
-                lab.className = "tariffs-subsection-label";
-                lab.textContent = title;
-                panel.appendChild(lab);
-                const subGrid = document.createElement("div");
-                subGrid.className = "tariffs-grid";
-                for (const m of models) {
-                  appendModelToGrid(subGrid, m, showCat);
-                }
-                panel.appendChild(subGrid);
+              const note = document.createElement("p");
+              note.className = "hint";
+              note.style.margin = "0 0 1rem";
+              note.innerHTML =
+                "Только модели с <strong>озвучкой ответа</strong> (GPT Audio). Голос на входе с ответом текстом — в разделе «Текст и чат» (микрофон → распознавание речи).";
+              panel.appendChild(note);
+              const grid = document.createElement("div");
+              grid.className = "tariffs-grid";
+              for (const m of modelList) {
+                appendModelToGrid(grid, m, showCat);
               }
-              addSpeechSubsection("Распознавание и ответ со звуком в чате", audioOutMs);
-              addSpeechSubsection("Речь на входе, ответ текстом", speechInTextOutMs);
+              panel.appendChild(grid);
             } else {
               const grid = document.createElement("div");
               grid.className = "tariffs-grid";
@@ -420,6 +567,7 @@
               art.classList.toggle("tariff-card--hidden", hide);
             });
           }
+          applyTariffsFilterRef = applyTariffsFilter;
           if (filterInput) {
             filterInput.addEventListener("input", applyTariffsFilter);
             filterInput.addEventListener("search", applyTariffsFilter);
@@ -462,12 +610,6 @@
             }
           });
 
-          function cssEsc(s) {
-            return typeof CSS !== "undefined" && typeof CSS.escape === "function"
-              ? CSS.escape(String(s))
-              : String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-          }
-
           /** Вернуться с / : выбрать вкладку с моделью из чата, подсветить карточку, прокрутить и фокус. */
           function focusStoredChatModelOnTariffs() {
             let slug = "";
@@ -485,7 +627,7 @@
               applyTariffsFilter();
             }
 
-            const tabId = primaryModelTabId(model);
+            const tabId = primaryModelTabId(model, favSetGlobal);
             const tryPanel = (gid) => {
               const panel = panelsRoot.querySelector(`.tariffs-panel[data-group="${cssEsc(gid)}"]`);
               if (!panel) return null;
@@ -545,6 +687,6 @@
             '<p class="err" style="display:block">Не удалось загрузить модели.</p>';
         });
     </script>
-    <script src="/static/js/app-nav.js?v=4" defer></script>
+    <script src="/static/js/app-nav.js?v=10" defer></script>
   </body>
 </html>

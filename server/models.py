@@ -39,8 +39,12 @@ class User(Base):
     is_blocked: Mapped[int] = mapped_column(Integer, default=0)
     # Последняя выбранная в чате модель (slug из ai_models); синхронизируется с клиентом.
     last_chat_model_slug: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Избранные модели (slug из активного каталога). NULL = ещё не инициализировано — подставим дефолты.
+    favorite_model_slugs: Mapped[Optional[list[Any]]] = mapped_column(JSON, nullable=True)
     # Успешный вход (OAuth / пароль / регистрация); naive UTC как created_at.
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Принятие пользовательского соглашения (на сервере); NULL — ещё не зафиксировано в БД.
+    terms_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
     payment_orders: Mapped[list["PaymentOrder"]] = relationship(back_populates="user")
@@ -67,7 +71,7 @@ class AiModel(Base):
     supports_image_generation: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_music_generation: Mapped[bool] = mapped_column(Boolean, default=False)
     supports_video_generation: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Ответы с аудио/речью в чате (GPT Audio и т.п.), не обязательно музыка.
+    # Голос / озвучка ответа в чате (GPT Audio и т.п.), не обязательно музыка.
     supports_speech: Mapped[bool] = mapped_column(Boolean, default=False)
     # Распознавание речи (endpoint /audio/transcriptions в OpenRouter), не chat completions.
     supports_transcription: Mapped[bool] = mapped_column(Boolean, default=False)

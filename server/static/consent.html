@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Согласие с условиями — II Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=85" />
+  </head>
+  <body>
+    <div id="site-banner-slot" aria-live="polite"></div>
+    <script src="/static/js/site-banner.js?v=2" defer></script>
+    <div id="site-header-root"></div>
+    <script src="/static/js/site-header.js?v=10" defer></script>
+
+    <div class="login-wrap">
+      <div class="login-box login-box--wide">
+        <p class="login-box-lead" style="margin-bottom: 1rem">
+          Чтобы пользоваться сервисом, подтвердите согласие с документами ниже.
+        </p>
+
+        <form id="form-consent" class="login-form login-form--aligned">
+          <div class="login-consent-wrap" style="margin-top: 0">
+            <label class="login-consent-row" for="terms-consent"
+              ><input type="checkbox" id="terms-consent" required /><span class="login-consent-text"
+                >Согласен с&nbsp;<a href="/terms" target="_blank" rel="noopener noreferrer">условиями пользовательского соглашения</a>
+                и&nbsp;<a href="/privacy" target="_blank" rel="noopener noreferrer">Политикой конфиденциальности</a></span></label>
+          </div>
+          <p id="consent-err" class="login-banner-err" style="display: none; margin-top: 0.75rem"></p>
+          <button type="submit" class="btn btn-primary login-submit" style="margin-top: 1rem">
+            Продолжить
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const api = (p, o = {}) => {
+        const { headers: h, ...rest } = o;
+        const headers = { "ngrok-skip-browser-warning": "2048", ...(h || {}) };
+        const method = String(rest.method || "GET").toUpperCase();
+        if (rest.body && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+          headers["Content-Type"] = "application/json";
+        }
+        return fetch(p, { credentials: "include", ...rest, headers });
+      };
+
+      function nextUrl() {
+        const qp = new URLSearchParams(window.location.search);
+        const n = qp.get("next");
+        if (n && n.startsWith("/") && !n.startsWith("//")) return n;
+        return "/";
+      }
+
+      (async function init() {
+        try {
+          const mr = await api("/api/auth/me");
+          if (!mr.ok) {
+            location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search));
+            return;
+          }
+          const me = await mr.json();
+          if (me.guest) {
+            location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search));
+            return;
+          }
+          if (me.termsAccepted === true) {
+            location.replace(nextUrl());
+            return;
+          }
+        } catch {
+          location.replace("/login");
+          return;
+        }
+
+        document.getElementById("form-consent").addEventListener("submit", async (ev) => {
+          ev.preventDefault();
+          const err = document.getElementById("consent-err");
+          err.style.display = "none";
+          const cb = document.getElementById("terms-consent");
+          if (!cb || !cb.checked) {
+            err.textContent = "Отметьте согласие, чтобы продолжить.";
+            err.style.display = "block";
+            return;
+          }
+          try {
+            const r = await api("/api/auth/accept-terms", {
+              method: "POST",
+              body: JSON.stringify({ termsAccepted: true }),
+            });
+            if (r.ok) {
+              location.href = nextUrl();
+              return;
+            }
+            let msg = "Не удалось сохранить согласие";
+            try {
+              const j = await r.json();
+              if (typeof j.detail === "string") msg = j.detail;
+            } catch {
+              /* ignore */
+            }
+            err.textContent = msg;
+            err.style.display = "block";
+          } catch {
+            err.textContent = "Ошибка сети. Попробуйте ещё раз.";
+            err.style.display = "block";
+          }
+        });
+      })();
+    </script>
+    <script src="/static/js/app-nav.js?v=10" defer></script>
+  </body>
+</html>

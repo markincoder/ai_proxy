@@ -103,6 +103,14 @@ def create_app() -> FastAPI:
     def index():
         return _html(STATIC_DIR / "index.html")
 
+    @app.get("/consent")
+    def consent_page():
+        """Подтверждение оферты после входа, если в БД ещё нет отметки."""
+        return HTMLResponse(
+            (STATIC_DIR / "consent.html").read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/login")
     def login_page():
         """Подставляет флаги OAuth в HTML: fetch('/api/config') через ngrok часто не JSON."""
@@ -136,6 +144,10 @@ def create_app() -> FastAPI:
     @app.get("/terms")
     def terms_page():
         return _html(STATIC_DIR / "terms.html")
+
+    @app.get("/privacy")
+    def privacy_page():
+        return _html(STATIC_DIR / "privacy.html")
 
     @app.get("/contact")
     def contact_page():

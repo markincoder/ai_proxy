@@ -3,6 +3,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 class CreatePaymentBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    amount_rub: str = Field(alias="amountRub")
+    amount_rub: Annotated[str, Field(alias="amountRub")]
 
 
 _AMOUNT_RUB_RE = re.compile(r"^\d+(\.\d{1,2})?$")
@@ -263,8 +264,8 @@ async def _find_succeeded_payment_for_simplepay_order(
 
 class SyncSimplePayBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    order_id: str = Field(alias="orderId")
-    yookassa_payment_id: str | None = Field(default=None, alias="yookassaPaymentId")
+    order_id: Annotated[str, Field(alias="orderId")]
+    yookassa_payment_id: Annotated[str | None, Field(default=None, alias="yookassaPaymentId")]
 
 
 @router.post("/create")

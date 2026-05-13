@@ -6,7 +6,7 @@
   const LINKS = [
     { href: "/news", label: "Новости" },
     { href: "/", label: "Чат" },
-    { href: "/tariffs", label: "Тарифы" },
+    { href: "/tariffs", label: "Модели и тарифы" },
     { href: "/settings", label: "Настройки", id: "nav-settings", loggedInOnly: true },
     { href: "/contact", label: "Контакты", id: "nav-contact" },
     { href: "/developers", label: "Разработчикам" },
@@ -19,9 +19,31 @@
     return p || "/";
   }
 
-  function isNavActive(href, path) {
-    if (href === "/") return path === "/";
-    return path === href || path.startsWith(href + "/");
+  /**
+   * Один активный пункт: при совпадении префиксов выигрывает самый длинный href
+   * (исключает двойную подсветку «Чат» + другой раздел на некоторых путях).
+   */
+  function activeNavHrefForPath(path) {
+    let best = null;
+    let bestLen = -1;
+    for (const item of LINKS) {
+      const href = item.href;
+      if (href === "/") {
+        if (path === "/" && 1 > bestLen) {
+          best = href;
+          bestLen = 1;
+        }
+        continue;
+      }
+      if (path === href || path.startsWith(href + "/")) {
+        const len = href.length;
+        if (len > bestLen) {
+          best = href;
+          bestLen = len;
+        }
+      }
+    }
+    return best;
   }
 
   function inject() {
@@ -29,8 +51,9 @@
     if (!root) return;
 
     const path = normalizePath();
+    const activeHref = activeNavHrefForPath(path);
     const linksHtml = LINKS.map((item) => {
-      const active = isNavActive(item.href, path) ? " active" : "";
+      const active = item.href === activeHref ? " active" : "";
       const idAttr = item.id ? ` id="${item.id}"` : "";
       const styleAttr =
         item.adminOnly || item.loggedInOnly ? ` style="display: none"` : "";
@@ -44,7 +67,7 @@
       </a>
       <nav class="nav-links">${linksHtml}</nav>
       <div class="nav-actions">
-        <span class="balance-pill" id="balance-wrap"
+        <span class="balance-pill" id="balance-wrap" hidden
           ><span class="balance-pill-pref" aria-hidden="true">Баланс&nbsp;</span><strong id="balance">—</strong></span
         >
         <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>

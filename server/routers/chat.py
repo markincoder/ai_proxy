@@ -15,6 +15,7 @@ from ..anthropic_bridge import (
     iter_openai_sse_to_anthropic_sse,
     openai_completion_to_anthropic_message,
 )
+from ..billing import compute_spend_rub, estimate_min_spend_rub
 from ..database import SessionLocal
 from ..deps import resolve_user_id
 from ..error_logging import log_upstream_request_failure
@@ -29,6 +30,11 @@ from ..openrouter import (
 )
 from ..openai_audio_input import reencode_audio_bytes_to_wav
 from ..pricing_rub import rub_price_ceil_2
+from ..openrouter_billing_wall import (
+    SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+    is_openrouter_balance_or_credit_wall,
+    notify_openrouter_balance_wall_maybe,
+)
 from ..services.spend import assert_balance_covers_estimate, record_spend
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
@@ -45,7 +51,28 @@ _MSG_NO_UPSTREAM = (
 _ALLOWED_TTS_VOICES = frozenset(
     {"alloy", "echo", "fable", "onyx", "nova", "shimmer"},
 )
+# Без этого поля OpenRouter для части моделей подставляет огромный max_tokens (~65536 completion),
+# резервируя лимит под «худший случай» — при малом балансе аккаунта OpenRouter запрос отклоняют.
+_DEFAULT_CHAT_COMPLETION_MAX_TOKENS = 8192
+# Lyria (Pro и Clip): один max_tokens для OpenRouter — отдельное завышение для Pro давало текст без звука
+# у части ключей из-за резерва лимита у провайдера; финальный аудиобинарник иногда в choices[].message, не в delta.
+_LYRIA_COMPLETION_MAX_TOKENS = 32768
+_MINIMAX_M2_MUSIC_COMPLETION_MAX_TOKENS = 32768
+# GPT Audio на OpenRouter: выходной звук считается «дорогими» completion-токенами; при 8192 часто только текст.
+_GPT_AUDIO_COMPLETION_MAX_TOKENS = 16384
 
+
+def _default_max_tokens_for_model(model: AiModel, body_max: int | None) -> int:
+    if body_max is not None:
+        return body_max
+    slug = (model.slug or "").lower()
+    if model.supports_music_generation and "lyria" in slug:
+        return _LYRIA_COMPLETION_MAX_TOKENS
+    if model.supports_music_generation and slug.startswith("minimax/minimax-m2"):
+        return _MINIMAX_M2_MUSIC_COMPLETION_MAX_TOKENS
+    if model.supports_speech and "gpt-audio" in slug:
+        return _GPT_AUDIO_COMPLETION_MAX_TOKENS
+    return _DEFAULT_CHAT_COMPLETION_MAX_TOKENS
 
 def _normalize_tts_voice(raw: str | None) -> str:
     if not raw or not str(raw).strip():
@@ -54,6 +81,38 @@ def _normalize_tts_voice(raw: str | None) -> str:
     if v in _ALLOWED_TTS_VOICES:
         return v
     return _DEFAULT_TTS_VOICE
+
+
+_LYRIA_OPENROUTER_SYSTEM = (
+    "Music generation: produce audio for the user's style request. Prefer concrete style words in English "
+    "in the prompt when possible."
+)
+
+
+def _inject_lyria_router_system(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Короткий system для Lyria: длинные «ты модель…» промпты иногда уводят ответ в текст ассистента."""
+    if not messages:
+        return [{"role": "system", "content": _LYRIA_OPENROUTER_SYSTEM}]
+    first = messages[0]
+    role = str(first.get("role") or "").lower()
+    if role == "system":
+        c0 = first.get("content")
+        if isinstance(c0, str) and c0.strip():
+            merged = f"{_LYRIA_OPENROUTER_SYSTEM}\n\n{c0.strip()}"
+        elif isinstance(c0, list):
+            merged_parts: list[dict[str, Any]] = [
+                {"type": "text", "text": _LYRIA_OPENROUTER_SYSTEM},
+                *[p for p in c0 if isinstance(p, dict)],
+            ]
+            out = list(messages)
+            out[0] = {**first, "content": merged_parts}
+            return out
+        else:
+            merged = _LYRIA_OPENROUTER_SYSTEM
+        out = list(messages)
+        out[0] = {**first, "content": merged}
+        return out
+    return [{"role": "system", "content": _LYRIA_OPENROUTER_SYSTEM}, *messages]
 
 
 def _messages_contain_input_audio(msg_dicts: list[dict[str, Any]]) -> bool:
@@ -138,12 +197,22 @@ def _pick_stt_model_for_voice_input(db: Session) -> AiModel | None:
     return stt
 
 
-def _openrouter_http_error_detail(resp: httpx.Response) -> str:
+def _openrouter_http_error_detail(resp: httpx.Response, *, context: str = "OpenRouter") -> str:
     """
     Текст ошибки провайдера (сырой JSON/сообщение) для HTTPException(detail=...).
     Часто приходит только error.message «Provider returned 400» без причины — тогда добавляем сырой JSON.
     """
     raw = (resp.text or "").strip()
+    if is_openrouter_balance_or_credit_wall(raw, resp.status_code):
+        notify_openrouter_balance_wall_maybe(raw, context)
+        return SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
+    raw_lower = raw.lower()
+    if "user location is not supported" in raw_lower:
+        return (
+            "Google: доступ к API из вашего региона не поддерживается (Lyria и часть Gemini идут через Google). "
+            "Это ограничение провайдера, не II Proxy."
+        )
+
     try:
         j = resp.json()
     except (json.JSONDecodeError, ValueError):
@@ -193,14 +262,15 @@ def _parse_optional_stt_language(raw: str | None) -> str | None:
 
 
 def _needs_voice_then_tts(model: AiModel, raw_msgs: list[dict[str, Any]]) -> bool:
-    """GPT Audio в каталоге (speech + music_generation) при голосе пользователя.
+    """OpenAI GPT Audio: при голосе пользователя (input_audio).
 
     Для `_handle_chat_json`: сначала STT, затем один streamed completion с audio (см. ниже).
     Для `_resolve_user_for_model`: к оценке чата добавляется нижняя граница STT.
     """
+    slug = (model.slug or "").lower()
     return (
         model.supports_speech
-        and model.supports_music_generation
+        and "gpt-audio" in slug
         and _messages_contain_input_audio(raw_msgs)
     )
 
@@ -227,7 +297,7 @@ async def _transcribe_and_bill(
     if tr.status_code >= 400:
         raise HTTPException(
             status_code=502,
-            detail=_openrouter_http_error_detail(tr),
+            detail=_openrouter_http_error_detail(tr, context="Транскрипция аудио (OpenRouter)"),
         )
 
     try:
@@ -241,7 +311,7 @@ async def _transcribe_and_bill(
     if isinstance(tr_json, dict) and tr_json.get("error"):
         raise HTTPException(
             status_code=502,
-            detail=_openrouter_http_error_detail(tr),
+            detail=_openrouter_http_error_detail(tr, context="Транскрипция аудио (OpenRouter)"),
         )
 
     text = (tr_json.get("text") or "").strip()
@@ -638,36 +708,38 @@ async def _handle_chat_json(
         # сначала Whisper (STT), затем текст в чат → тот же аудиовыход через modalities.
         body = await _gpt_audio_voice_turn_stt_then_text_body(body, user_id)
         raw_msgs = [m.model_dump() for m in body.messages]
-    has_user_input_audio = _messages_contain_input_audio(raw_msgs)
     tts_v = _normalize_tts_voice(body.tts_voice)
+    msgs_for_upstream = [m.model_dump() for m in body.messages]
+    if model.supports_music_generation and "lyria" in (model.slug or "").lower():
+        msgs_for_upstream = _inject_lyria_router_system(msgs_for_upstream)
     payload: dict[str, Any] = {
         "model": body.model_slug,
-        "messages": [m.model_dump() for m in body.messages],
+        "messages": msgs_for_upstream,
         "stream": body.stream,
     }
     if body.temperature is not None:
         payload["temperature"] = body.temperature
-    if body.max_tokens is not None:
-        payload["max_tokens"] = body.max_tokens
+    payload["max_tokens"] = _default_max_tokens_for_model(model, body.max_tokens)
     if model.supports_image_generation:
         payload["modalities"] = ["image", "text"]
-    elif model.supports_speech and model.supports_music_generation:
-        # GPT Audio: после голоса в multipart вопрос уже преобразован в текст (STT) — как обычный чат.
-        if not has_user_input_audio:
-            payload["modalities"] = ["text", "audio"]
-            # При stream=true OpenAI принимает только audio.format=pcm16 (не wav).
-            payload["audio"] = {
-                "voice": tts_v,
-                "format": "pcm16" if body.stream else "wav",
-            }
-    elif model.supports_music_generation and "lyria" in (model.slug or "").lower():
-        # Google Lyria: без modalities в запросе провайдер может вернуть только текст;
-        # аудио приходит в delta.audio (stream), формат см. OpenRouter.
+    elif model.supports_speech and "gpt-audio" in (model.slug or "").lower():
+        # GPT Audio (OpenRouter): всегда запрашиваем аудиовыход; без modalities провайдер отдаёт только текст.
+        # input_audio в том же запросе провайдер может не любить — для голоса из UI сначала STT (см. выше).
         payload["modalities"] = ["text", "audio"]
+        # При stream=true OpenAI принимает только audio.format=pcm16 (не wav).
         payload["audio"] = {
-            "voice": "alloy",
+            "voice": tts_v,
             "format": "pcm16" if body.stream else "wav",
         }
+    elif model.supports_music_generation and "lyria" in (model.slug or "").lower():
+        # Важно: не передавать audio.voice — это поле TTS (OpenAI/Gemini Flash TTS); с ним OpenRouter
+        # может отдать обычный текстовый ответ вместо музыки Lyria.
+        payload["modalities"] = ["text", "audio"]
+        payload["audio"] = {"format": "pcm16" if body.stream else "wav"}
+    elif model.supports_music_generation and (model.slug or "").startswith("minimax/minimax-m2"):
+        # MiniMax M2: как Lyria — без voice, иначе провайдер может трактовать запрос как TTS/чат.
+        payload["modalities"] = ["text", "audio"]
+        payload["audio"] = {"format": "pcm16" if body.stream else "wav"}
 
     if not body.stream:
         try:
@@ -682,6 +754,18 @@ async def _handle_chat_json(
                 },
             )
         if upstream.status_code >= 400:
+            raw_err = upstream.text or ""
+            if is_openrouter_balance_or_credit_wall(raw_err, upstream.status_code):
+                notify_openrouter_balance_wall_maybe(
+                    raw_err, "Чат: chat/completions без stream"
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "provider_error",
+                        "detail": SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+                    },
+                )
             return JSONResponse(
                 status_code=upstream.status_code,
                 content={"error": "provider_error", "detail": upstream.text},
@@ -722,10 +806,23 @@ async def _handle_chat_json(
                     ) as resp:
                         if resp.status_code >= 400:
                             err = await resp.aread()
-                            text = err.decode("utf-8", errors="replace")[:2000]
-                            err_b = (
-                                f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": text}}, ensure_ascii=False)}\n\n'
-                            ).encode("utf-8")
+                            raw_e = err.decode("utf-8", errors="replace")
+                            if is_openrouter_balance_or_credit_wall(
+                                raw_e, resp.status_code
+                            ):
+                                notify_openrouter_balance_wall_maybe(
+                                    raw_e,
+                                    "Чат: stream (Anthropic wire → OpenRouter)",
+                                )
+                                sanitized = SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
+                                err_b = (
+                                    f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": sanitized}}, ensure_ascii=False)}\n\n'
+                                ).encode("utf-8")
+                            else:
+                                text = raw_e[:2000]
+                                err_b = (
+                                    f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": text}}, ensure_ascii=False)}\n\n'
+                                ).encode("utf-8")
                             yield err_b
                             yield b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
                             return
@@ -783,7 +880,15 @@ async def _handle_chat_json(
                     if resp.status_code >= 400:
                         err = await resp.aread()
                         text = err.decode("utf-8", errors="replace")
-                        yield f"data: {text}\n\n".encode()
+                        if is_openrouter_balance_or_credit_wall(text, resp.status_code):
+                            notify_openrouter_balance_wall_maybe(
+                                text, "Чат: SSE stream (chat/completions)"
+                            )
+                            yield _sse_upstream_error(
+                                SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
+                            )
+                        else:
+                            yield f"data: {text}\n\n".encode()
                         return
                     async for chunk in resp.aiter_bytes():
                         yield chunk

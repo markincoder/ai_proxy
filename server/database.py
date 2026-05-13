@@ -280,8 +280,6 @@ def __getattr__(name: str) -> Any:
 
 
 def _provider_from_seed_spec(s: dict[str, object]) -> str:
-    if str(s["slug"]) == get_settings().openrouter_free_router_slug:
-        return str(get_settings().openrouter_app_title)
     return str(s["provider"])
 
 
@@ -511,6 +509,107 @@ def _ensure_user_last_login_at_column(engine) -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL"))
 
 
+def _ensure_user_terms_accepted_at_column(engine) -> None:
+    """Существующие БД: terms_accepted_at (согласие с пользовательским соглашением)."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "terms_accepted_at" in cols:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            conn.execute(text("ALTER TABLE users ADD COLUMN terms_accepted_at DATETIME"))
+        elif dialect == "postgresql":
+            conn.execute(text("ALTER TABLE users ADD COLUMN terms_accepted_at TIMESTAMP NULL"))
+        else:
+            conn.execute(text("ALTER TABLE users ADD COLUMN terms_accepted_at DATETIME NULL"))
+
+
+def _ensure_user_favorite_model_slugs_column(engine) -> None:
+    """Существующие БД: favorite_model_slugs (JSON-список slug избранных моделей)."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "favorite_model_slugs" in cols:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            conn.execute(text("ALTER TABLE users ADD COLUMN favorite_model_slugs TEXT"))
+        elif dialect == "postgresql":
+            conn.execute(text("ALTER TABLE users ADD COLUMN favorite_model_slugs JSONB"))
+        elif dialect == "mysql":
+            conn.execute(text("ALTER TABLE users ADD COLUMN favorite_model_slugs JSON"))
+        else:
+            conn.execute(text("ALTER TABLE users ADD COLUMN favorite_model_slugs TEXT"))
+
+
+def _sanitize_users_datetime_sentinels(engine) -> None:
+    """SQLite и др.: исправить '' в колонках даты у users (ORM иначе падает на чтении строки)."""
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    cols_meta = {c["name"] for c in insp.get_columns("users")}
+    dialect = engine.dialect.name
+
+    dt_cols = ("last_login_at", "terms_accepted_at", "created_at", "updated_at")
+    present = [c for c in dt_cols if c in cols_meta]
+    if not present:
+        return
+
+    nullable = frozenset(("last_login_at", "terms_accepted_at"))
+
+    if dialect == "sqlite":
+        # Через pool не использовать raw_connection()+commit(): возможны откаты при возврате в пул.
+        # Массовые UPDATE надёжнее построчного обхода и чистят все '' / пробельные «пустые» текстовые ячейки.
+        with engine.begin() as conn:
+            for col in present:
+                qcol = '"' + col.replace('"', "") + '"'
+                bad_empty = (
+                    f"(trim(cast({qcol} AS TEXT)) = '' OR "
+                    f"(typeof({qcol}) = 'text' AND trim({qcol}) = ''))"
+                )
+                if col in nullable:
+                    conn.execute(text(f"UPDATE users SET {qcol} = NULL WHERE {bad_empty}"))
+                else:
+                    conn.execute(
+                        text(f"UPDATE users SET {qcol} = CURRENT_TIMESTAMP WHERE {bad_empty}")
+                    )
+        return
+
+    with engine.begin() as conn:
+        if dialect == "mysql":
+            # Нельзя писать `col = '0000-00-00 00:00:00'` — в strict / NO_ZERO_DATE литерал недопустим (1292).
+            for col in present:
+                q = "`" + col.replace("`", "") + "`"
+                bad = (
+                    f"(TRIM(CAST({q} AS CHAR(64))) IN "
+                    f"('', '0000-00-00 00:00:00', '0000-00-00'))"
+                )
+                if col in nullable:
+                    conn.execute(text(f"UPDATE users SET {q} = NULL WHERE {bad}"))
+                else:
+                    conn.execute(
+                        text(f"UPDATE users SET {q} = CURRENT_TIMESTAMP WHERE {bad}")
+                    )
+        elif dialect == "postgresql":
+            for col in present:
+                if col not in nullable:
+                    continue
+                conn.execute(
+                    text(f'UPDATE users SET "{col}" = NULL WHERE CAST("{col}" AS TEXT) = \'\'')
+                )
+        else:
+            for col in present:
+                if col in nullable:
+                    conn.execute(
+                        text(f'UPDATE users SET "{col}" = NULL WHERE "{col}" = \'\' OR trim(cast("{col}" as text)) = \'\'')
+                    )
+
+
 def _drop_legacy_user_pii_columns(engine) -> None:
     """Удаляем неиспользуемые колонки: ФИО (name), телефон — не храним email/ФИО/контакты пользователя."""
     insp = inspect(engine)
@@ -539,6 +638,9 @@ def init_db() -> None:
     _ensure_user_last_chat_model_slug_column(engine)
     _ensure_user_is_blocked_column(engine)
     _ensure_user_last_login_at_column(engine)
+    _ensure_user_terms_accepted_at_column(engine)
+    _ensure_user_favorite_model_slugs_column(engine)
+    _sanitize_users_datetime_sentinels(engine)
     _ensure_ai_model_embedding_columns(engine)
     _drop_legacy_user_pii_columns(engine)
     specs = get_all_catalog_specs_ordered()

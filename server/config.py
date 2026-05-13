@@ -38,7 +38,7 @@ class Settings(BaseSettings):
         default="https://openrouter.ai/api/v1",
         validation_alias="OPENROUTER_API_BASE_URL",
     )
-    openrouter_free_router_slug: str = Field(default="openrouter/free", validation_alias="OPENROUTER_FREE_ROUTER_SLUG")
+    openrouter_free_router_slug: str = Field(default="", validation_alias="OPENROUTER_FREE_ROUTER_SLUG")
     thread_model_fallback_slug: str = Field(default="openai/gpt-4o", validation_alias="THREAD_MODEL_FALLBACK_SLUG")
     removed_openrouter_slugs: str = Field(default="", validation_alias="REMOVED_OPENROUTER_SLUGS")
     # То же, что для scripts/sync_openrouter_prices.py: коэффициенты для USD → баланс (чат usage.cost, видео, см. pricing_rub).

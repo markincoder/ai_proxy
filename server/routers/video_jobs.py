@@ -14,6 +14,11 @@ from ..config import get_settings
 from ..deps import resolve_user_id
 from ..models import AiModel, Transaction
 from ..openrouter import openrouter_headers_get, video_generation_create, video_generation_get
+from ..openrouter_billing_wall import (
+    SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+    is_openrouter_balance_or_credit_wall,
+    notify_openrouter_balance_wall_maybe,
+)
 from ..pricing_rub import openrouter_usd_to_balance_rub
 from ..services.spend import assert_positive_balance, record_spend
 
@@ -68,7 +73,19 @@ async def create_video_job(request: Request, body: CreateVideoJobBody):
         assert_positive_balance(db, user_id)
 
     resp = await video_generation_create({"model": body.model_slug, "prompt": body.prompt.strip()})
+    raw_b = resp.text or ""
     if resp.status_code == 402:
+        if is_openrouter_balance_or_credit_wall(raw_b, 402):
+            notify_openrouter_balance_wall_maybe(
+                raw_b, "Видео: POST /videos (OpenRouter)"
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "provider_unavailable",
+                    "detail": SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+                },
+            )
         return JSONResponse(status_code=402, content={"error": "Payment Required"})
     if resp.status_code not in (200, 201, 202):
         try:

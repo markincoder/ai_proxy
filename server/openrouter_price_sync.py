@@ -109,8 +109,6 @@ def compute_token_rub(
     usd_rub: Decimal,
     mult: Decimal,
 ) -> tuple[Decimal, Decimal] | None:
-    if slug == get_settings().openrouter_free_router_slug:
-        return Decimal("0"), Decimal("0")
     m = models.get(slug)
     if not m:
         return None
@@ -149,17 +147,6 @@ def build_apply_rows(
     for spec in get_default_model_specs():
         slug = str(spec["slug"])
         if spec.get("is_free"):
-            continue
-
-        if slug == "openrouter/auto":
-            updates.append(
-                ApplyRow(
-                    slug=slug,
-                    input_price_per_mn=_decimal_from_any(spec.get("input_price_per_mn")),
-                    output_price_per_mn=_decimal_from_any(spec.get("output_price_per_mn")),
-                    set_fixed_price=None,
-                )
-            )
             continue
 
         if spec.get("supports_video_generation"):

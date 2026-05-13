@@ -39,11 +39,9 @@ def public_config():
         "oauthVk": s.vk_oauth_configured,
         "siteBanner": site_banner_public(),
         "publicAppUrl": base_url,
-        "openrouterFreeRouterSlug": (
-            (s.openrouter_free_router_slug or "").strip() or "openrouter/free"
-        ),
+        "openrouterFreeRouterSlug": (s.openrouter_free_router_slug or "").strip(),
     }
-    if s.yookassa_enabled:
-        if s.yookassa_shop_id:
-            out["yookassaShopId"] = s.yookassa_shop_id
+    # Только публичный id магазина для Simple Pay. YOOKASSA_SECRET_KEY в ответ не включается.
+    if s.yookassa_enabled and s.yookassa_shop_id:
+        out["yookassaShopId"] = s.yookassa_shop_id
     return out

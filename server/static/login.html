@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,13 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Вход — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=72" />
+    <link rel="stylesheet" href="/static/css/style.css?v=85" />
   </head>
   <body>
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=8" defer></script>
+    <script src="/static/js/site-header.js?v=10" defer></script>
 
     <div class="login-wrap">
       <div class="login-box login-box--wide">
@@ -102,11 +102,6 @@
           </div>
           </div>
         </div>
-
-        <p class="login-terms-line">
-          Продолжая вход или регистрацию (в том числе через Яндекс или VK), вы принимаете
-          <a href="/terms">пользовательское соглашение</a>.
-        </p>
       </div>
     </div>
 
@@ -184,7 +179,9 @@
         else btnBack.setAttribute("hidden", "");
       }
 
-      btnShowLocal.addEventListener("click", openLocalView);
+      btnShowLocal.addEventListener("click", () => {
+        openLocalView();
+      });
       btnBack.addEventListener("click", openChoiceView);
 
       document.querySelectorAll(".login-auth-tab").forEach((btn) => {
@@ -234,13 +231,22 @@
 
       async function persistIdentityAfterLogin() {
         try {
-          const m = await import("/static/js/identity-links.js?v=2");
+          const m = await import("/static/js/identity-links.js?v=4");
           const mr = await api("/api/auth/me");
           if (!mr.ok) return;
           const me = await mr.json();
           m.persistIdentityLinksFromMe(me);
         } catch {
           /* ignore */
+        }
+      }
+
+      function redirectAfterAuth(meJson) {
+        const dest = nextUrl();
+        if (meJson && meJson.termsAccepted === true) {
+          location.href = dest;
+        } else {
+          location.href = "/consent?next=" + encodeURIComponent(dest);
         }
       }
 
@@ -255,7 +261,12 @@
         const r = await api("/api/auth/login-password", { method: "POST", body: JSON.stringify(body) });
         if (r.ok) {
           await persistIdentityAfterLogin();
-          location.href = nextUrl();
+          try {
+            const j = await r.json();
+            redirectAfterAuth(j);
+          } catch {
+            location.href = nextUrl();
+          }
           return;
         }
         let msg = "Не удалось войти";
@@ -296,7 +307,12 @@
         const r = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
         if (r.ok) {
           await persistIdentityAfterLogin();
-          location.href = nextUrl();
+          try {
+            const j = await r.json();
+            redirectAfterAuth(j);
+          } catch {
+            location.href = "/consent?next=" + encodeURIComponent(nextUrl());
+          }
           return;
         }
         let msg = "Ошибка регистрации";
@@ -317,12 +333,26 @@
       });
 
       async function init() {
-        const qp = new URLSearchParams(window.location.search);
-        const oe = qp.get("oauth_error");
+        try {
+          const mr = await api("/api/auth/me");
+          if (mr.ok) {
+            const me = await mr.json();
+            if (!me.guest) {
+              const dest = nextUrl();
+              location.replace(me.termsAccepted === true ? dest : "/consent?next=" + encodeURIComponent(dest));
+              return;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+
+        const oe = new URLSearchParams(window.location.search).get("oauth_error");
         if (oe) {
           const el = document.getElementById("oauth-err");
           el.style.display = "block";
           if (oe === "blocked") {
+            const qp = new URLSearchParams(window.location.search);
             const bid = qp.get("blocked_id");
             const buid = qp.get("blocked_uid");
             let s = "Аккаунт заблокирован.";
@@ -363,36 +393,33 @@
 
         let oauthMod = null;
         try {
-          oauthMod = await import("/static/js/identity-links.js?v=2");
+          oauthMod = await import("/static/js/identity-links.js?v=4");
         } catch {
           oauthMod = null;
         }
 
         if (hasOAuth) {
-          /* Иначе гонка с defer app-nav / чатом: href без merge_* → второй провайдер создаёт нового user */
           await persistIdentityAfterLogin();
           document.getElementById("oauth-row").style.display = "flex";
           document.getElementById("login-or-divider").style.display = "flex";
           document.getElementById("no-oauth-hint").style.display = "none";
           if (oauthYandex) {
             const ly = document.getElementById("link-yandex");
-            ly.href = oauthMod
-              ? oauthMod.oauthStartUrl("/api/auth/oauth/yandex/start")
-              : "/api/auth/oauth/yandex/start";
+            const yaPath = "/api/auth/oauth/yandex/start";
+            ly.href = oauthMod ? oauthMod.oauthStartUrl(yaPath, {}) : yaPath;
             if (oauthMod) {
               ly.addEventListener("pointerdown", () => {
-                ly.href = oauthMod.oauthStartUrl("/api/auth/oauth/yandex/start");
+                ly.href = oauthMod.oauthStartUrl(yaPath, {});
               });
             }
           } else document.getElementById("link-yandex").style.display = "none";
           if (oauthVk) {
             const lv = document.getElementById("link-vk");
-            lv.href = oauthMod
-              ? oauthMod.oauthStartUrl("/api/auth/oauth/vk/start")
-              : "/api/auth/oauth/vk/start";
+            const vkPath = "/api/auth/oauth/vk/start";
+            lv.href = oauthMod ? oauthMod.oauthStartUrl(vkPath, {}) : vkPath;
             if (oauthMod) {
               lv.addEventListener("pointerdown", () => {
-                lv.href = oauthMod.oauthStartUrl("/api/auth/oauth/vk/start");
+                lv.href = oauthMod.oauthStartUrl(vkPath, {});
               });
             }
           } else document.getElementById("link-vk").style.display = "none";
@@ -409,6 +436,6 @@
 
       init();
     </script>
-    <script src="/static/js/app-nav.js?v=4" defer></script>
+    <script src="/static/js/app-nav.js?v=10" defer></script>
   </body>
 </html>

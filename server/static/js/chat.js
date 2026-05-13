@@ -1,10 +1,21 @@
-import { consumeStream } from "./sse.js?v=23";
-import { persistIdentityLinksFromMe } from "./identity-links.js?v=2";
+import { consumeStream } from "./sse.js?v=26";
+import { persistIdentityLinksFromMe } from "./identity-links.js?v=4";
+import {
+  getFavoriteSetForCatalog,
+  hydrateModelFavoritesFromServer,
+  setModelFavoritesServerSync,
+  syncFavoriteStarButton,
+  toggleFavoriteSlug,
+} from "./model-favorites.js?v=2";
 
 const MODEL_STORAGE_KEY = "ai_proxy_model_slug";
 /** Выставляется на /tariffs при выборе модели — чат не подменяет её моделью из старого диалога. */
 const MODEL_EXPLICIT_CHOICE_KEY = "ai_proxy_explicit_model";
 const STT_STORAGE_KEY = "ai_proxy_stt_slug";
+/** Гость: диалог в sessionStorage — не пропадает при переходе на «Тарифы» и обратно. */
+const GUEST_CHAT_SESSION_KEY = "ai_proxy_guest_chat_v1";
+const GUEST_CHAT_SESSION_MAX_BYTES = 450000;
+const STREAM_MD_FLUSH_MS = 100;
 const TTS_VOICE_STORAGE_KEY = "ai_proxy_tts_voice";
 const ALLOWED_TTS_VOICE_IDS = [
   "alloy",
@@ -102,6 +113,16 @@ function readStoredTtsVoice() {
 const YOOKASSA_CONSTRUCT_JS =
   "https://yookassa.ru/integration/simplepay/js/yookassa_construct_form.js?v=1.34.0";
 
+/** Значение из GET /api/config (YOOKASSA_SHOP_ID). Секрет API (YOOKASSA_SECRET_KEY) только на сервере — в форму и в страницу не попадает. */
+let yookassaShopIdFromConfig = "";
+
+function applyYookassaShopIdToForm() {
+  const form = document.getElementById("yookassa-simple-form");
+  if (!form || !yookassaShopIdFromConfig) return;
+  const inp = form.querySelector('[name="shopId"]');
+  if (inp) inp.value = yookassaShopIdFromConfig;
+}
+
 function loadYooKassaConstructOnce() {
   if (window.__aiProxyYookassaConstructLoaded) {
     return Promise.resolve();
@@ -135,6 +156,7 @@ function openPayModal() {
   modal.setAttribute("aria-hidden", "false");
   errElPay.style.display = "none";
   errElPay.textContent = "";
+  applyYookassaShopIdToForm();
   const sumInput = form.querySelector('[name="sum"]');
   if (sumInput) sumInput.focus();
 }
@@ -318,11 +340,61 @@ function isSttOnlyModel(m) {
   );
 }
 
-/** Микрофон/аудиофайл: любая небесплатная модель (кроме видео). Диктовка идёт через STT, «речь в чате» — с supportsSpeech. */
-function modelAllowsVoiceInput(m) {
+function formatRubShort(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "";
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 4 });
+}
+
+/** Одна строка для карточки в пикере (как на странице тарифов, короче). */
+function modelCardPricingLine(m) {
+  if (!m || typeof m !== "object") return "";
+  if (m.isFree === true) return "0 ₽ · лимиты сервиса";
+
+  if (m.supportsVideoGeneration === true) {
+    const rub = Number(m.inputPricePerMn);
+    if (rub > 0) return `ориентир ~${formatRubShort(rub)} ₽/с`;
+    return "₽/с по готовому ролику — см. тарифы";
+  }
+
+  if (isSttOnlyModel(m)) {
+    const rub = Number(m.inputPricePerMn);
+    if (rub > 0) return `ориентир ~${formatRubShort(rub)} ₽/мин аудио`;
+    return "распознавание · тариф провайдера";
+  }
+
+  const ins = formatRubShort(m.inputPricePerMn);
+  const outs = formatRubShort(m.outputPricePerMn);
+  const fixedN = Number(m.fixedPrice);
+  const fixed = Number.isFinite(fixedN) && fixedN > 0 ? formatRubShort(fixedN) : "";
+
+  if (m.supportsMusicGeneration === true && fixed) {
+    return `мин. ${fixed} ₽/запрос · вх ${ins || "—"} · вых ${outs || "—"} ₽/1M`;
+  }
+  if (ins || outs) {
+    return `вх ${ins || "—"} · вых ${outs || "—"} ₽/1M`;
+  }
+  return "стоимость по факту usage";
+}
+
+/** Аудиофайл: не режим видео (кнопка скрепки скрыта на бесплатных — до проверки не доходит). */
+function modelAllowsVoiceAttachment(m) {
+  if (!m || m.supportsVideoGeneration === true) return false;
+  return true;
+}
+
+/** Кнопка микрофона (запись): только платные не-видео модели. */
+function modelAllowsMicrophone(m) {
   if (!m || m.supportsVideoGeneration === true) return false;
   if (m.isFree === true) return false;
   return true;
+}
+
+/** Озвучка ответа в чате (GPT Audio на OpenRouter): не «голос на входе — текст», не Lyria. */
+function modelProducesSpokenChatAudio(m) {
+  if (!m || typeof m !== "object") return false;
+  const s = String(m.slug || "").toLowerCase();
+  return m.supportsSpeech === true && s.includes("gpt-audio");
 }
 
 /** Все вкладки, куда имеет смысл вывести модель (может быть несколько). */
@@ -341,12 +413,15 @@ function modelGroupIds(m) {
   if (m.isFree === true) push("free");
   if (m.supportsVideoGeneration === true) push("video");
   if (m.supportsImageGeneration === true) push("image");
-  if (m.supportsSpeech === true) push("speech");
+  if (modelProducesSpokenChatAudio(m)) push("speech");
   if (m.supportsTranscription === true) push("transcription");
   if (m.supportsMusicGeneration === true) push("music");
 
-  /** Обычный текстовый чат (completions): не только STT без диалога. */
-  const textOk = m.supportsChat !== false && !isSttOnlyModel(m);
+  /** Обычный текстовый чат: не STT-only и не музыка (музыка только во вкладке «Музыка»). */
+  const textOk =
+    m.supportsChat !== false &&
+    !isSttOnlyModel(m) &&
+    m.supportsMusicGeneration !== true;
   if (textOk) push("text");
 
   if (out.length === 0) push("text");
@@ -354,10 +429,26 @@ function modelGroupIds(m) {
 }
 
 /** Вкладка по умолчанию при выборе модели — прежний приоритет. */
-function primaryModelGroupId(m) {
+function primaryModelGroupId(m, favSet) {
   const ids = modelGroupIds(m);
-  const order = ["free", "video", "image", "speech", "transcription", "music", "text"];
+  const slug = String(m?.slug || "");
+  const order = [
+    "free",
+    "favorite",
+    "video",
+    "image",
+    "speech",
+    "transcription",
+    "music",
+    "text",
+  ];
   for (const id of order) {
+    if (id === "favorite") {
+      if (favSet && typeof favSet.has === "function" && slug && favSet.has(slug)) {
+        return "favorite";
+      }
+      continue;
+    }
     if (ids.includes(id)) return id;
   }
   return "text";
@@ -365,14 +456,15 @@ function primaryModelGroupId(m) {
 
 /** @deprecated Совместимость: одна «главная» вкладка. */
 function modelGroupId(m) {
-  return primaryModelGroupId(m);
+  return primaryModelGroupId(m, undefined);
 }
 
-/** Готовое аудио в ответ (Lyria и модели с речью+музыкой в API). Не путать с «(музыка в чате)» у Claude/GPT — там только текст. */
+/** Готовое аудио в ответ (Lyria; GPT Audio — речь/озвучка, не генерация музыки). Не путать с текстовыми моделями. */
 function modelProducesChatAudio(m) {
   if (!m || typeof m !== "object") return false;
   const s = String(m.slug || "").toLowerCase();
   if (s.includes("lyria")) return true;
+  if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
   return m.supportsSpeech === true && m.supportsMusicGeneration === true;
 }
 
@@ -384,15 +476,16 @@ function isTextOnlyMusicAssistModel(m) {
 
 const MODEL_GROUPS = [
   { id: "free", emoji: "🎁", title: "Бесплатные" },
+  { id: "favorite", emoji: "⭐", title: "Избранное" },
   { id: "text", emoji: "💬", title: "Текст и чат" },
   { id: "image", emoji: "🖼", title: "Изображения" },
   { id: "video", emoji: "🎬", title: "Видео" },
   { id: "transcription", emoji: "📝", title: "Транскрипция" },
-  { id: "speech", emoji: "🎙️", title: "Речь в чате" },
+  { id: "speech", emoji: "🎙️", title: "Голос" },
   { id: "music", emoji: "🎵", title: "Музыка" },
 ];
 
-function modelPickerFilterHaystack(m) {
+function modelPickerFilterHaystack(m, favSet) {
   const slug = String(m.slug || "");
   const slugWords = slug.replace(/[/\-_:]/g, " ");
   const desc =
@@ -402,7 +495,10 @@ function modelPickerFilterHaystack(m) {
   const tabTitles = MODEL_GROUPS.filter((g) => modelGroupIds(m).includes(g.id))
     .map((g) => g.title)
     .join(" ");
-  return [m.displayName, slug, slugWords, m.provider, desc, tabTitles]
+  const priceLine = modelCardPricingLine(m);
+  const favHint =
+    favSet && typeof favSet.has === "function" && favSet.has(slug) ? "избранное" : "";
+  return [m.displayName, slug, slugWords, m.provider, desc, tabTitles, priceLine, favHint]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -467,19 +563,20 @@ const MSG_CHAT_NO_UPSTREAM =
   "Сейчас нет связи с провайдером модели. Повторите запрос позже. Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
 const HINT_SUPPORT_IF_REPEATS =
   " Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
+/** Ответ/отказ пришёл от внешнего провайдера модели — общее пояснение для пользователя */
+const MSG_CHAT_PROVIDER_CONTACTS =
+  "Это сообщение от провайдера модели (не сбой II Proxy). Напишите через раздел «Контакты» на сайте — поможем разобраться и при необходимости исправим настройки.";
 
 /**
  * Понятные подсказки к ответам модели в потоке.
- * :free в slug и openrouter/free — правда общая очередь; is_free без :free в slug — только флаг в БД, текст нейтральнее.
+ * :free в slug — бесплатный маршрут OpenRouter (очередь/лимиты); is_free без :free в slug — только флаг в БД.
  */
 function humanizeOpenRouterStreamError(detail, opts = {}) {
   const isFree = opts.isFree === true;
   const slug = String(opts.modelSlug || "");
   const useFreeQueueStory =
     isFree &&
-    (slug.includes(":free") ||
-      slug === "openrouter/free" ||
-      slug.startsWith("openrouter/free"));
+    slug.includes(":free");
 
   const m = String(detail || "").trim();
   const low = m.toLowerCase();
@@ -494,28 +591,53 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
     return MSG_CHAT_NO_UPSTREAM;
   }
 
+  if (
+    low.includes("нет устойчивой связи с провайдером моделей") &&
+    low.includes("контакты")
+  ) {
+    return m.trim();
+  }
+
+  if (
+    low.includes("user location is not supported") ||
+    low.includes("location is not supported for the api")
+  ) {
+    return (
+      "Google отклоняет запрос: для вашего региона (или IP) доступ к этому API запрещён (часто так у Lyria и части Gemini через OpenRouter). " +
+      "Это ограничение провайдера Google, не II Proxy. Попробуйте сеть в поддерживаемом регионе или другую модель (например GPT Audio — озвучка текста). " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
+  }
+
   const providerBlob = () => {
     if (useFreeQueueStory) {
       return (
         "Бесплатный канал: общая очередь или временная недоступность этой модели у провайдера. " +
-        "Подождите минуту и повторите, выберите **Бесплатно (автовыбор)** или платную модель."
+        "Подождите минуту и повторите или выберите другую бесплатную модель из списка (или платную). " +
+        MSG_CHAT_PROVIDER_CONTACTS
       );
     }
     if (isFree) {
       return (
         "Провайдер не вернул ответ (часто так бывает с **новыми** или **редкими** моделями). " +
-        "Повторите запрос, смените модель или используйте **Бесплатно (автовыбор)**."
+        "Повторите запрос, смените модель или выберите другую бесплатную из списка. " +
+        MSG_CHAT_PROVIDER_CONTACTS
       );
     }
-    return "Провайдер модели вернул ошибку (лимит, перегрузка или сбой канала). Попробуйте другую модель или повторите запрос позже.";
+    return (
+      "Провайдер модели вернул ошибку (лимит, перегрузка или отказ канала). Попробуйте другую модель или повторите запрос позже. " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
   };
 
   if (!m) {
     return useFreeQueueStory
-      ? "Не удалось получить ответ по бесплатному каналу. Повторите позже или выберите платную модель."
+      ? "Не удалось получить ответ по бесплатному канале. Повторите позже или выберите платную модель. " +
+          MSG_CHAT_PROVIDER_CONTACTS
       : isFree
-        ? "Не удалось получить ответ. Повторите запрос или выберите другую модель."
-        : "Ошибка при ответе модели.";
+        ? "Не удалось получить ответ. Повторите запрос или выберите другую модель. " +
+          MSG_CHAT_PROVIDER_CONTACTS
+        : "Не удалось получить ответ модели. " + MSG_CHAT_PROVIDER_CONTACTS;
   }
 
   if (low.includes("provider returned error")) {
@@ -530,26 +652,62 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
   }
   if (low.includes("no endpoints found")) {
     if (useFreeQueueStory) {
-      return "Для этой бесплатной модели сейчас нет свободных серверов. Выберите другую бесплатную модель, **Бесплатно (автовыбор)** или платную.";
+      return (
+        "Для этой бесплатной модели сейчас нет свободных серверов. Выберите другую бесплатную модель из списка или платную. " +
+        MSG_CHAT_PROVIDER_CONTACTS
+      );
     }
     if (isFree) {
-      return "Для этой модели сейчас нет доступных серверов у провайдера. Выберите другую модель в списке.";
+      return (
+        "Для этой модели сейчас нет доступных серверов у провайдера. Выберите другую модель в списке. " +
+        MSG_CHAT_PROVIDER_CONTACTS
+      );
     }
-    return "Для выбранной модели сейчас нет доступных серверов. Выберите другую модель в списке.";
+    return (
+      "Для выбранной модели сейчас нет доступных серверов. Выберите другую модель в списке. " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
   }
   if (low.includes("rate limit") || low.includes("too many requests")) {
     if (useFreeQueueStory) {
-      return "Лимит запросов на бесплатном канале. Подождите или перейдите на платную модель.";
+      return (
+        "Лимит запросов на бесплатном канале. Подождите или перейдите на платную модель. " +
+        MSG_CHAT_PROVIDER_CONTACTS
+      );
     }
     if (isFree) {
-      return "Слишком много запросов для этого маршрута. Подождите или смените модель.";
+      return (
+        "Слишком много запросов для этого маршрута. Подождите или смените модель. " +
+        MSG_CHAT_PROVIDER_CONTACTS
+      );
     }
-    return "Слишком много запросов. Подождите немного или смените модель.";
+    return (
+      "Слишком много запросов. Подождите немного или смените модель. " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
+  }
+  if (
+    low.includes("requires more credits") ||
+    low.includes("fewer max_tokens") ||
+    low.includes("openrouter.ai/settings") ||
+    low.includes("can only afford")
+  ) {
+    return (
+      "Провайдер (OpenRouter) отклонил запрос из‑за резерва токенов или лимита аккаунта у них — это не баланс II Proxy. " +
+      "Обычно помогает повтор запроса после нашего обновления или выбор другой модели. " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
   }
   if (low.includes("context length") || low.includes("maximum context")) {
-    return "Превышен допустимый размер контекста. Начните новый чат или сократите историю.";
+    return (
+      "Превышен допустимый размер контекста. Начните новый чат или сократите историю. " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
   }
-  return m.length > 280 ? `${m.slice(0, 277)}…` : m;
+  return (
+    "Провайдер модели вернул техническое сообщение об ошибке (подробности в консоли браузера, F12). " +
+    MSG_CHAT_PROVIDER_CONTACTS
+  );
 }
 
 /**
@@ -640,6 +798,7 @@ async function main() {
   persistIdentityLinksFromMe(me);
   const isGuest = me.guest === true;
   const cfg = cfgRaw && typeof cfgRaw === "object" ? cfgRaw : {};
+  yookassaShopIdFromConfig = cfg.yookassaShopId ? String(cfg.yookassaShopId).trim() : "";
 
   const models = Array.isArray(modelsRaw)
     ? modelsRaw.filter(
@@ -652,6 +811,13 @@ async function main() {
     : [];
   const sttModels = models.filter((x) => x.supportsTranscription === true);
   const chatModels = models.filter((m) => m.supportsChat !== false);
+
+  if (!isGuest) {
+    setModelFavoritesServerSync(true);
+    await hydrateModelFavoritesFromServer(chatModels.map((x) => x.slug));
+  } else {
+    setModelFavoritesServerSync(false);
+  }
 
   const balanceEl = document.getElementById("balance");
   const balanceWrapEl = document.getElementById("balance-wrap");
@@ -668,6 +834,14 @@ async function main() {
     if (t.startsWith("audio/")) return true;
     const n = String(f.name || "").toLowerCase();
     return /\.(mp3|wav|ogg|opus|oga|webm|m4a|aac|flac|mp4)$/i.test(n);
+  }
+  /** Когда браузер не выставил MIME (часто с диска под Windows). */
+  function fileLooksLikeImage(f) {
+    if (!f || typeof f !== "object") return false;
+    const t = (f.type || "").toLowerCase();
+    if (t.startsWith("image/")) return true;
+    const n = String(f.name || "").toLowerCase();
+    return /\.(png|jpe?g|gif|webp|bmp|svg|heic|avif|ico)$/i.test(n);
   }
   const btnPay = document.getElementById("btn-pay");
   const videoPanelEl = document.getElementById("video-panel");
@@ -746,7 +920,7 @@ async function main() {
   }
 
   if (!isGuest && cfg && cfg.yookassaEnabled && btnPay) {
-    const shopId = cfg.yookassaShopId ? String(cfg.yookassaShopId).trim() : "";
+    const shopId = yookassaShopIdFromConfig;
     // Не подставлять только publicAppUrl из .env: при www / другом алиасе домена редирект с ЮKassa
     // уходит на «канонический» хост без cookie → гость → sync-simplepay не вызывается, баланс не растёт.
     const base = (typeof window !== "undefined" ? window.location.origin : "").replace(
@@ -846,8 +1020,7 @@ async function main() {
         true,
       );
 
-      const shopIdInput = form?.querySelector('[name="shopId"]');
-      if (shopIdInput) shopIdInput.value = shopId;
+      applyYookassaShopIdToForm();
 
       payModal?.querySelectorAll("[data-pay-modal-close]").forEach((el) => {
         el.addEventListener("click", () => closePayModal());
@@ -873,7 +1046,7 @@ async function main() {
       "",
       u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash,
     );
-    const sid = cfg?.yookassaShopId ? String(cfg.yookassaShopId).trim() : "";
+    const sid = yookassaShopIdFromConfig;
     if (
       !isGuest &&
       cfg &&
@@ -997,18 +1170,14 @@ async function main() {
     return freeModels[0]?.slug ?? null;
   }
 
-  /** Без сохранённого выбора: slug из конфига (OPENROUTER_FREE_ROUTER_SLUG), иначе первая бесплатная в каталоге. */
+  /** Без сохранённого выбора: первая бесплатная в каталоге (та же сортировка, что вкладка «Бесплатные»), иначе первая модель чата. */
   function defaultChatModelSlugOrFallback() {
-    const fromCfg =
-      cfg && typeof cfg.openrouterFreeRouterSlug === "string"
-        ? cfg.openrouterFreeRouterSlug.trim()
-        : "";
-    const prefer = fromCfg || "openrouter/free";
-    if (prefer && chatModels.some((x) => x.slug === prefer)) return prefer;
     return firstFreeChatModelSlug(chatModels) ?? chatModels[0]?.slug ?? "";
   }
 
   let selectedSlug = defaultChatModelSlugOrFallback();
+  /** У аккаунта в БД уже есть last_chat_model_slug — можно подстроить селектор под открытый диалог. */
+  let hadServerLastModel = false;
   /** true: не открывать последний чат при старте — уважать ?model= или выбор с тарифов. */
   let honorExplicitModelChoice = false;
   /* Сначала ?model= (переход с /tariffs), иначе последний выбор из сессии. */
@@ -1027,21 +1196,26 @@ async function main() {
     } else {
       let remembered = false;
 
-      const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
-      if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
-        selectedSlug = savedSlug;
-        remembered = true;
-      }
-
-      if (
+      /** На сервере уже сохранён выбор аккаунта — он важнее локальной сессии. */
+      hadServerLastModel =
         !isGuest &&
         typeof me.lastModelSlug === "string" &&
         me.lastModelSlug.trim() &&
-        chatModels.some((x) => x.slug === me.lastModelSlug.trim())
-      ) {
+        chatModels.some((x) => x.slug === me.lastModelSlug.trim());
+
+      if (hadServerLastModel) {
         selectedSlug = me.lastModelSlug.trim();
         sessionStorage.setItem(MODEL_STORAGE_KEY, selectedSlug);
         remembered = true;
+      }
+
+      /** После входа без lastModelSlug — первая бесплатная из каталога, не гостевой slug из sessionStorage. */
+      if (!remembered && isGuest) {
+        const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
+        if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
+          selectedSlug = savedSlug;
+          remembered = true;
+        }
       }
 
       if (!remembered) {
@@ -1051,6 +1225,11 @@ async function main() {
           sessionStorage.setItem(MODEL_STORAGE_KEY, d);
         }
       }
+
+      if (!isGuest && !hadServerLastModel && selectedSlug) {
+        schedulePersistLastModel(selectedSlug);
+      }
+
       if (sessionStorage.getItem(MODEL_EXPLICIT_CHOICE_KEY) === "1") {
         honorExplicitModelChoice = true;
         sessionStorage.removeItem(MODEL_EXPLICIT_CHOICE_KEY);
@@ -1074,9 +1253,12 @@ async function main() {
     if (sel) {
       const activeTab = modelPickerEl.querySelector(".model-tab.model-tab--active");
       const currentGid = activeTab?.dataset?.group ?? "";
+      const favSetNow = getFavoriteSetForCatalog(chatModels.map((x) => x.slug));
       const keepTab =
-        Boolean(currentGid) && modelGroupIds(sel).includes(currentGid);
-      if (!keepTab) activateModelTab(primaryModelGroupId(sel));
+        Boolean(currentGid) &&
+        (modelGroupIds(sel).includes(currentGid) ||
+          (currentGid === "favorite" && favSetNow.has(sel.slug)));
+      if (!keepTab) activateModelTab(primaryModelGroupId(sel, favSetNow));
     }
 
     /** Видимая панель, иначе первая копия модели среди вкладок. */
@@ -1125,14 +1307,27 @@ async function main() {
   }
 
   if (modelPickerEl) {
-    const buckets = { free: [], text: [], image: [], video: [], transcription: [], speech: [], music: [] };
-    for (const m of chatModels) {
-      for (const gid of modelGroupIds(m)) {
-        if (Object.prototype.hasOwnProperty.call(buckets, gid)) {
-          buckets[gid].push(m);
+    function mountChatModelPicker(preserve) {
+      const catalogSlugs = chatModels.map((x) => x.slug);
+      const favSet = getFavoriteSetForCatalog(catalogSlugs);
+      const buckets = {
+        free: [],
+        favorite: [],
+        text: [],
+        image: [],
+        video: [],
+        transcription: [],
+        speech: [],
+        music: [],
+      };
+      for (const m of chatModels) {
+        if (favSet.has(m.slug)) buckets.favorite.push(m);
+        for (const gid of modelGroupIds(m)) {
+          if (Object.prototype.hasOwnProperty.call(buckets, gid)) {
+            buckets[gid].push(m);
+          }
         }
       }
-    }
     for (const k of Object.keys(buckets)) {
       buckets[k].sort((a, b) =>
         String(a.displayName).localeCompare(String(b.displayName), "ru"),
@@ -1143,7 +1338,8 @@ async function main() {
     if (!groupsWithModels.length) {
       modelPickerEl.innerHTML =
         '<p class="model-picker-empty">Нет доступных моделей.</p>';
-    } else {
+      return;
+    }
       const tabBar = document.createElement("div");
       tabBar.className = "model-tabs";
       tabBar.setAttribute("role", "tablist");
@@ -1153,8 +1349,10 @@ async function main() {
       panelWrap.className = "model-tab-panels";
 
       const initialGid = (() => {
+        const pt = preserve && preserve.preserveTab ? String(preserve.preserveTab) : "";
+        if (pt && groupsWithModels.some((x) => x.id === pt)) return pt;
         const sm = chatModels.find((x) => x.slug === selectedSlug);
-        if (sm) return primaryModelGroupId(sm);
+        if (sm) return primaryModelGroupId(sm, favSet);
         return groupsWithModels[0].id;
       })();
 
@@ -1171,10 +1369,46 @@ async function main() {
           typeof m.descriptionRu === "string" && m.descriptionRu.trim()
             ? m.descriptionRu.trim()
             : `${m.provider}. Детали и цены — в разделе «Все модели».`;
+        const priceOneLiner = modelCardPricingLine(m);
+        const isFav = favSet.has(m.slug);
         btn.setAttribute(
           "title",
-          `${m.displayName} — ${m.provider} (${m.slug})`,
+          `${m.displayName} — ${m.provider} (${m.slug})` +
+            (priceOneLiner ? ` · ${priceOneLiner}` : ""),
         );
+
+        const starBtn = document.createElement("span");
+        starBtn.setAttribute("role", "button");
+        starBtn.tabIndex = 0;
+        starBtn.className = "model-favorite-star";
+        starBtn.dataset.modelId = m.slug;
+        const starIc = document.createElement("span");
+        starIc.className = "model-favorite-star__icon";
+        starIc.setAttribute("aria-hidden", "true");
+        starIc.textContent = isFav ? "★" : "☆";
+        starBtn.appendChild(starIc);
+        syncFavoriteStarButton(starBtn, isFav);
+        function onStarActivate(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          toggleFavoriteSlug(m.slug, catalogSlugs);
+          let ps = "";
+          let pt = "";
+          try {
+            const si = modelPickerEl.querySelector(".model-picker-search");
+            ps = si && typeof si.value === "string" ? si.value : "";
+            pt =
+              modelPickerEl.querySelector(".model-tab.model-tab--active")?.dataset
+                ?.group ?? "";
+          } catch {
+            /* ignore */
+          }
+          mountChatModelPicker({ preserveSearch: ps, preserveTab: pt });
+        }
+        starBtn.addEventListener("click", onStarActivate);
+        starBtn.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") onStarActivate(ev);
+        });
 
         const iconWrap = document.createElement("span");
         iconWrap.className = "model-card-icon";
@@ -1236,15 +1470,21 @@ async function main() {
           titleRow.appendChild(fb);
         }
 
+        const pr = document.createElement("span");
+        pr.className = "model-card-price";
+        pr.textContent = priceOneLiner;
+
         const dc = document.createElement("span");
         dc.className = "model-card-desc";
         dc.textContent = desc;
 
         body.appendChild(titleRow);
+        body.appendChild(pr);
         body.appendChild(dc);
+        btn.appendChild(starBtn);
         btn.appendChild(iconWrap);
         btn.appendChild(body);
-        btn.dataset.filterText = modelPickerFilterHaystack(m);
+        btn.dataset.filterText = modelPickerFilterHaystack(m, favSet);
         return btn;
       }
 
@@ -1295,6 +1535,24 @@ async function main() {
             row.appendChild(buildModelButton(m));
           }
           for (const m of textOnlyMs) {
+            row.appendChild(buildModelButton(m));
+          }
+          panel.appendChild(row);
+        } else if (g.id === "favorite") {
+          const row = document.createElement("div");
+          row.className = "model-scroll-row";
+          row.setAttribute("role", "group");
+          row.setAttribute("aria-label", "Избранные модели");
+          for (const m of list) {
+            row.appendChild(buildModelButton(m));
+          }
+          panel.appendChild(row);
+        } else if (g.id === "speech") {
+          const row = document.createElement("div");
+          row.className = "model-scroll-row";
+          row.setAttribute("role", "group");
+          row.setAttribute("aria-label", "Голос: ответ со звуком");
+          for (const m of list) {
             row.appendChild(buildModelButton(m));
           }
           panel.appendChild(row);
@@ -1475,10 +1733,19 @@ async function main() {
       modelPickerEl.addEventListener("click", (e) => {
         const btn = e.target.closest(".model-card");
         if (!btn || !modelPickerEl.contains(btn)) return;
+        if (e.target.closest(".model-favorite-star")) return;
         const slug = btn.dataset.modelId;
         if (slug) void selectModelPick(slug);
       });
+
+      if (preserve && preserve.preserveSearch != null && searchInput) {
+        searchInput.value = preserve.preserveSearch;
+        applyModelPickerSearch();
+      }
+      selectModelVisual(selectedSlug);
     }
+
+    mountChatModelPicker();
   }
 
   const sttModeHintEl = document.getElementById("stt-mode-hint");
@@ -1500,23 +1767,25 @@ async function main() {
     }
     const bm = document.getElementById("btn-mic");
     if (bm) {
-      const allowVi = modelAllowsVoiceInput(m);
-      bm.style.display = allowVi ? "" : "none";
-      bm.disabled = !allowVi;
-      bm.title = allowVi
-        ? "Удерживайте — запись; отпустите — отправка: при модели «Речь в чате» аудио уходит в модель, иначе — распознавание речи (платно)."
+      const allowMic = modelAllowsMicrophone(m);
+      bm.style.display = allowMic ? "" : "none";
+      bm.disabled = !allowMic;
+      bm.title = allowMic
+        ? "Удерживайте — запись; отпустите — отправка: при модели «Голос» аудио уходит в модель, иначе — распознавание речи."
         : m?.isFree === true
-          ? "Голос: доступен только на платных моделях"
+          ? "На бесплатных моделях нет микрофона и вложений — выберите платную модель."
           : "Голос недоступен в этом режиме";
     }
     const at = document.getElementById("btn-attach");
     if (at) {
-      const allowAtt = m.isFree !== true;
+      const allowAtt = m.supportsVideoGeneration !== true && m.isFree !== true;
       at.style.display = allowAtt ? "" : "none";
       at.disabled = !allowAtt;
       at.title = allowAtt
         ? "Прикрепить изображение или аудио"
-        : "Вложения доступны только на платных моделях";
+        : m?.isFree === true
+          ? "Вложения только на платных моделях (не вкладка «Бесплатные»)"
+          : "Вложения недоступны в режиме видео";
     }
     if (videoPanelEl && formEl) {
       videoPanelEl.style.display = vid ? "block" : "none";
@@ -1720,8 +1989,8 @@ async function main() {
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     const typing = document.createElement("span");
-    typing.className = "typing";
-    typing.textContent = "Печатает…";
+    typing.className = "typing typing--loading";
+    typing.textContent = "Формирую ответ…";
     const md = document.createElement("div");
     md.className = "md";
     const audioBlock = document.createElement("div");
@@ -2013,6 +2282,72 @@ async function main() {
     listEl.scrollTop = listEl.scrollHeight;
   }
 
+  let guestChatSaveTimer = 0;
+  function saveGuestChatSession() {
+    if (!isGuest) return;
+    try {
+      if (chatHistory.length === 0) {
+        sessionStorage.removeItem(GUEST_CHAT_SESSION_KEY);
+        return;
+      }
+      const messages = JSON.parse(
+        JSON.stringify(sanitizeMessagesForPersist(chatHistory)),
+      );
+      const payload = {
+        v: 1,
+        modelSlug: selectedSlug || "",
+        messages,
+        at: Date.now(),
+      };
+      const raw = JSON.stringify(payload);
+      if (raw.length > GUEST_CHAT_SESSION_MAX_BYTES) return;
+      sessionStorage.setItem(GUEST_CHAT_SESSION_KEY, raw);
+    } catch {
+      /* quota / приватный режим */
+    }
+  }
+  function scheduleGuestChatSave() {
+    if (!isGuest) return;
+    window.clearTimeout(guestChatSaveTimer);
+    guestChatSaveTimer = window.setTimeout(() => {
+      guestChatSaveTimer = 0;
+      saveGuestChatSession();
+    }, 320);
+  }
+  function tryRestoreGuestChatSession() {
+    if (!isGuest) return;
+    try {
+      const raw = sessionStorage.getItem(GUEST_CHAT_SESSION_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (
+        !data ||
+        data.v !== 1 ||
+        !Array.isArray(data.messages) ||
+        data.messages.length === 0
+      ) {
+        return;
+      }
+      chatHistory.length = 0;
+      for (const m of data.messages) chatHistory.push(m);
+      const slug =
+        typeof data.modelSlug === "string" && data.modelSlug.trim()
+          ? data.modelSlug.trim()
+          : "";
+      if (slug && chatModels.some((x) => x.slug === slug)) {
+        setSelectedSlug(slug);
+      }
+      renderChatFromHistory();
+      listEl.scrollTop = listEl.scrollHeight;
+    } catch {
+      try {
+        sessionStorage.removeItem(GUEST_CHAT_SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   function setSidebarBusy(busy) {
     if (btnNewChat) btnNewChat.disabled = busy;
     if (threadListEl) {
@@ -2099,7 +2434,8 @@ async function main() {
     threadPersistModelSlug = null;
   }
 
-  async function openThread(id) {
+  async function openThread(id, opts) {
+    const applyThreadModel = opts?.applyThreadModel !== false;
     if (isGuest) return;
     if (streaming || transcribing || videoGenInProgress || !id) return;
     if (currentConversationId && currentConversationId !== id) {
@@ -2115,8 +2451,12 @@ async function main() {
     for (const m of t.messages || []) {
       chatHistory.push(m);
     }
-    if (t.modelSlug && chatModels.some((x) => x.slug === t.modelSlug)) {
-      setSelectedSlug(t.modelSlug);
+    if (
+      applyThreadModel &&
+      threadPersistModelSlug &&
+      chatModels.some((x) => x.slug === threadPersistModelSlug)
+    ) {
+      setSelectedSlug(threadPersistModelSlug);
     }
     renderChatFromHistory();
     updateHints();
@@ -2131,6 +2471,13 @@ async function main() {
     listEl.innerHTML = "";
     errEl.style.display = "none";
     errEl.textContent = "";
+    if (isGuest) {
+      try {
+        sessionStorage.removeItem(GUEST_CHAT_SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
     await refreshSidebarList();
   }
 
@@ -2182,7 +2529,7 @@ async function main() {
       await refreshSidebarList();
       return;
     }
-    await openThread(list[0].id);
+    await openThread(list[0].id, { applyThreadModel: hadServerLastModel });
   }
 
   await initConversations();
@@ -2208,8 +2555,9 @@ async function main() {
   function setComposerDisabled(flag) {
     if (inputEl) inputEl.disabled = flag;
     const mod = selectedModel();
-    const allowVoice = mod ? modelAllowsVoiceInput(mod) : false;
-    const allowAttach = mod && mod.isFree !== true;
+    const allowVoice = mod ? modelAllowsMicrophone(mod) : false;
+    const allowAttach =
+      mod && mod.supportsVideoGeneration !== true && mod.isFree !== true;
     const bm = document.getElementById("btn-mic");
     const at = document.getElementById("btn-attach");
     const sub = formEl?.querySelector('button[type="submit"]');
@@ -2346,6 +2694,7 @@ async function main() {
 
       if (isSttOnlyModel(mod)) {
         await persistThread();
+        scheduleGuestChatSave();
         return;
       }
 
@@ -2408,6 +2757,24 @@ async function main() {
       return html;
     }
 
+    let streamMdFlushTimer = null;
+    function flushStreamMdNow() {
+      if (streamMdFlushTimer != null) {
+        window.clearTimeout(streamMdFlushTimer);
+        streamMdFlushTimer = null;
+      }
+      md.innerHTML = renderAssistantHtml();
+      listEl.scrollTop = listEl.scrollHeight;
+    }
+    function scheduleStreamMdFlush() {
+      if (streamMdFlushTimer != null) return;
+      streamMdFlushTimer = window.setTimeout(() => {
+        streamMdFlushTimer = null;
+        md.innerHTML = renderAssistantHtml();
+        listEl.scrollTop = listEl.scrollHeight;
+      }, STREAM_MD_FLUSH_MS);
+    }
+
     if (res.status === 401) {
       let msg = "Войдите в аккаунт, чтобы пользоваться платными моделями.";
       try {
@@ -2447,7 +2814,18 @@ async function main() {
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       console.error("[chat /messages]", res.status, j);
-      errEl.textContent = "Ошибка";
+      let errText = "Ошибка запроса.";
+      const d = j.detail;
+      if (j.error === "provider_error" && typeof d === "string" && d.trim()) {
+        const mod = selectedModel();
+        errText = humanizeOpenRouterStreamError(d, {
+          isFree: mod?.isFree === true,
+          modelSlug: mod?.slug,
+        });
+      } else if (typeof d === "string" && d.trim()) {
+        errText = d;
+      }
+      errEl.textContent = errText;
       errEl.style.display = "block";
       typing.remove();
       await persistThread();
@@ -2459,8 +2837,7 @@ async function main() {
       (delta) => {
         acc += delta;
         typing.remove();
-        md.innerHTML = renderAssistantHtml();
-        listEl.scrollTop = listEl.scrollHeight;
+        scheduleStreamMdFlush();
       },
       (rub) => {
         const n = Number(rub);
@@ -2483,8 +2860,12 @@ async function main() {
           isFree: mod?.isFree === true,
           modelSlug: mod?.slug,
         });
+        const suppressRawTail = msg.includes("«Контакты»");
         const tail =
-          raw.trim() && msg !== raw.trim() && !msg.includes(raw.trim())
+          !suppressRawTail &&
+          raw.trim() &&
+          msg !== raw.trim() &&
+          !msg.includes(raw.trim())
             ? `\n\nТекст провайдера: ${raw.length > 420 ? `${raw.slice(0, 417)}…` : raw}`
             : "";
         errEl.textContent = `${msg}${tail}`;
@@ -2497,14 +2878,16 @@ async function main() {
           if (typeof u === "string" && u && !imageUrls.includes(u)) imageUrls.push(u);
         }
         typing.remove();
-        md.innerHTML = renderAssistantHtml();
-        listEl.scrollTop = listEl.scrollHeight;
+        scheduleStreamMdFlush();
       },
       undefined,
       (aud) => {
-        if (aud?.data) audioParts.push(aud.data);
+        if (aud && typeof aud === "object" && aud.data) audioParts.push(aud.data);
+        else if (typeof aud === "string" && aud) audioParts.push(aud);
       },
     );
+
+    flushStreamMdNow();
 
     if (audioOut && audioParts.length > 0) {
       try {
@@ -2556,7 +2939,8 @@ async function main() {
 
     const me2 = await api("/api/auth/me").then((r) => r.json());
     if (!me2.guest && me2.balance != null) refreshBalance(me2.balance);
-    await persistThread();
+    void persistThread().catch((e) => console.warn("[chat] persistThread", e));
+    scheduleGuestChatSave();
   }
 
   async function sendVoiceMessage(blob, filename, audioSource = "mic") {
@@ -2982,6 +3366,12 @@ async function main() {
             releaseVideoJob();
             return;
           }
+          if (r.status === 503 && typeof j.detail === "string" && j.detail.trim()) {
+            ui.statusEl.textContent = "Провайдер недоступен.";
+            await pushVideoAssistantRow(j.detail.trim(), errVideoMeta);
+            releaseVideoJob();
+            return;
+          }
           videoFail("POST HTTP error", { status: r.status, body: j });
           await pushVideoAssistantRow(
             "Не удалось создать задачу видео.",
@@ -3147,11 +3537,11 @@ async function main() {
       const mod = selectedModel();
       if (!mod || mod.supportsVideoGeneration === true) return;
       if (mediaRecorder && mediaRecorder.state === "recording") return;
-      if (!modelAllowsVoiceInput(mod)) {
+      if (!modelAllowsMicrophone(mod)) {
         errEl.textContent =
           mod.isFree === true
-            ? "Голос с микрофона доступен только на платных моделях — переключитесь с вкладки «Бесплатные»."
-            : "Голос для этой модели недоступен (например, режим видео).";
+            ? "Микрофон и вложения на бесплатных моделях недоступны — выберите платную модель."
+            : "Голос недоступен в этом режиме (например, выбрана модель для видео).";
         errEl.style.display = "block";
         return;
       }
@@ -3241,16 +3631,14 @@ async function main() {
     if (!mod || mod.supportsVideoGeneration === true) return;
     if (mod.isFree === true) {
       errEl.textContent =
-        "Вложения (изображения и аудио) доступны только на платных моделях — переключитесь с вкладки «Бесплатные».";
+        "Вложения доступны только на платных моделях — переключитесь с вкладки «Бесплатные».";
       errEl.style.display = "block";
       return;
     }
     if (fileLooksLikeUserAudio(f)) {
-      if (!modelAllowsVoiceInput(mod)) {
+      if (!modelAllowsVoiceAttachment(mod)) {
         errEl.textContent =
-          mod.isFree === true
-            ? "Аудиофайл можно отправить только на платной модели (не вкладка «Бесплатные»)."
-            : "Аудио для этой модели недоступно. Выберите модель с речью или вкладку «Транскрипция».";
+          "Аудио для этой модели недоступно. Выберите другую модель или вкладку «Транскрипция».";
         errEl.style.display = "block";
         return;
       }
@@ -3264,40 +3652,57 @@ async function main() {
       await sendVoiceMessage(f, f.name, "file");
       return;
     }
-    if (!f.type.startsWith("image/")) {
-      errEl.textContent = "Вложение: изображение или аудиофайл.";
-      errEl.style.display = "block";
-      return;
-    }
-    if (!mod.supportsVision) {
-      errEl.textContent = "Эта модель не анализирует изображения. Выберите модель с поддержкой vision.";
-      errEl.style.display = "block";
-      return;
-    }
-    if (mod.isFree !== true && isGuest) {
-      errEl.textContent =
-        "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
-      errEl.style.display = "block";
-      return;
-    }
-    const b64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(String(r.result));
-      r.onerror = rej;
-      r.readAsDataURL(f);
-    });
-    const text = inputEl.value.trim() || "Опиши изображение.";
-    inputEl.value = "";
+    const looksImage = f.type.startsWith("image/") || fileLooksLikeImage(f);
+    if (looksImage) {
+      if (!mod.supportsVision) {
+        errEl.textContent =
+          "Эта модель не анализирует изображения. Выберите модель с поддержкой vision.";
+        errEl.style.display = "block";
+        return;
+      }
+      if (mod.isFree !== true && isGuest) {
+        errEl.textContent =
+          "Платные модели доступны после входа. Нажмите «Войти» в шапке.";
+        errEl.style.display = "block";
+        return;
+      }
+      let b64;
+      try {
+        b64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result));
+          r.onerror = () => rej(new Error("read"));
+          r.readAsDataURL(f);
+        });
+      } catch {
+        errEl.textContent =
+          "Не удалось прочитать файл. Проверьте доступ к файлу или выберите другое изображение.";
+        errEl.style.display = "block";
+        return;
+      }
+      const text = inputEl.value.trim() || "Опиши изображение.";
+      inputEl.value = "";
 
-    await ensureConversation();
-    const userContent = [
-      { type: "text", text },
-      { type: "image_url", image_url: { url: b64 } },
-    ];
-    chatHistory.push({ role: "user", content: userContent });
-    appendUserMessageDisplay(userContent);
-    await runChat();
+      await ensureConversation();
+      const userContent = [
+        { type: "text", text },
+        { type: "image_url", image_url: { url: b64 } },
+      ];
+      chatHistory.push({ role: "user", content: userContent });
+      appendUserMessageDisplay(userContent);
+      await runChat();
+      return;
+    }
+    errEl.textContent =
+      "Формат не поддерживается. Можно прикрепить изображение (например PNG, JPEG, WebP, GIF) или аудио (MP3, WAV, WebM и др.). PDF, документы и архивы сюда не загружаются — скопируйте текст в поле сообщения.";
+    errEl.style.display = "block";
   });
+
+  tryRestoreGuestChatSession();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") saveGuestChatSession();
+  });
+  window.addEventListener("pagehide", () => saveGuestChatSession());
 }
 
 main().catch((e) => {

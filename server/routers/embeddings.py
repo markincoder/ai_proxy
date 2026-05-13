@@ -15,6 +15,11 @@ from ..deps import resolve_user_id
 from ..error_logging import log_upstream_request_failure
 from ..models import AiModel
 from ..openrouter import embeddings_create
+from ..openrouter_billing_wall import (
+    SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+    is_openrouter_balance_or_credit_wall,
+    notify_openrouter_balance_wall_maybe,
+)
 from ..services.spend import assert_balance_covers_estimate, record_spend
 
 router = APIRouter(prefix="/api/v1", tags=["embeddings"])
@@ -149,6 +154,17 @@ async def dispatch_embeddings(request: Request) -> JSONResponse:
 
     txt = resp.text
     if resp.status_code >= 400:
+        if is_openrouter_balance_or_credit_wall(txt, resp.status_code):
+            notify_openrouter_balance_wall_maybe(txt, "Эмбеддинги /embeddings")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "message": SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU,
+                        "type": "api_connection_error",
+                    },
+                },
+            )
         return JSONResponse(
             status_code=resp.status_code,
             content={

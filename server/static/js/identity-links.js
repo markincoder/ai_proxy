@@ -38,8 +38,10 @@ export function persistIdentityLinksFromMe(me) {
   }
 }
 
-export function oauthStartUrl(basePath) {
+/** opts: необязательные merge_* из формы (обычно только merge из LS через oauthStartUrl). */
+export function oauthStartUrl(basePath, opts) {
   const path = String(basePath || "").trim() || "/api/auth/oauth/yandex/start";
+  opts = opts && typeof opts === "object" ? opts : {};
   try {
     const raw = localStorage.getItem(IDENTITY_LINKS_LS_KEY);
     let o = {};

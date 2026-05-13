@@ -32,16 +32,19 @@ def _send_mail(subject: str, body: str) -> None:
     msg["From"] = frm
     msg["To"] = to_addr
     msg.set_content(body)
-    if port == 465:
-        with smtplib.SMTP_SSL(server, port, timeout=30) as smtp:
-            smtp.login(user, password)
-            smtp.send_message(msg)
-    else:
-        with smtplib.SMTP(server, port, timeout=30) as smtp:
-            if s.mail_starttls:
-                smtp.starttls()
-            smtp.login(user, password)
-            smtp.send_message(msg)
+    try:
+        if port == 465:
+            with smtplib.SMTP_SSL(server, port, timeout=30) as smtp:
+                smtp.login(user, password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(server, port, timeout=30) as smtp:
+                if s.mail_starttls:
+                    smtp.starttls()
+                smtp.login(user, password)
+                smtp.send_message(msg)
+    except Exception as e:
+        logger.warning("mail notify failed (%s:%s): %s", server, port, e)
 
 
 def _send_telegram(text: str) -> None:
@@ -51,31 +54,28 @@ def _send_telegram(text: str) -> None:
     if not token or not chat_id:
         return
     t = text if len(text) <= TELEGRAM_MAX else text[: TELEGRAM_MAX - 3] + "..."
-    r = httpx.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": t, "disable_web_page_preview": True},
-        timeout=25.0,
-    )
-    r.raise_for_status()
+    try:
+        r = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": t, "disable_web_page_preview": True},
+            timeout=25.0,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        logger.warning("telegram notify failed: %s", e)
 
 
 def _notify_admin(subject: str, body: str) -> None:
-    try:
-        _send_mail(subject, body)
-    except Exception:
-        logger.exception("mail notify failed")
-    try:
-        _send_telegram(body)
-    except Exception:
-        logger.exception("telegram notify failed")
+    _send_mail(subject, body)
+    _send_telegram(body)
 
 
 def _fire_and_forget(fn: Callable[[], None]) -> None:
     def runner() -> None:
         try:
             fn()
-        except Exception:
-            logger.exception("admin notify task failed")
+        except Exception as e:
+            logger.warning("admin notify task failed: %s", e)
 
     threading.Thread(target=runner, daemon=True).start()
 
@@ -143,6 +143,29 @@ def schedule_error_log_notification(
         if tb:
             body_parts.append(f"\nФрагмент traceback:\n{tb}\n")
         body = "".join(body_parts)
+        _notify_admin(subject, body)
+
+    _fire_and_forget(run)
+
+
+def schedule_openrouter_low_balance_notification(
+    provider_response_excerpt: str,
+    context: str,
+) -> None:
+    """OpenRouter вернул отказ из-за счёта/кредитов на вашем API-ключе (не UI-пользователя)."""
+
+    def run() -> None:
+        subject = "[II Proxy] Низкий или нулевой баланс OpenRouter"
+        excerpt = (provider_response_excerpt or "").strip()
+        if len(excerpt) > 5000:
+            excerpt = excerpt[:4997] + "..."
+        body = (
+            "Провайдер OpenRouter сообщил об отказе из-за недостатка средств или кредитов "
+            "на аккаунте/ключе API OpenRouter (это не баланс ₽ пользователя на сайте).\n\n"
+            f"Где замечено: {context}\n\n"
+            "Фрагмент ответа провайдера:\n"
+            f"{excerpt if excerpt else '(пусто)'}\n"
+        )
         _notify_admin(subject, body)
 
     _fire_and_forget(run)

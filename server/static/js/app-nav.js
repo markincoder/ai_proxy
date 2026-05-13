@@ -99,13 +99,22 @@
   }
 
   async function initAppNav() {
+    const me = await loadMe();
+
+    if (me && me.guest !== true && me.termsAccepted === false) {
+      if (location.pathname !== "/consent") {
+        let dest = location.pathname + location.search;
+        if (location.pathname === "/login") dest = "/";
+        location.replace("/consent?next=" + encodeURIComponent(dest));
+        return;
+      }
+    }
+
     const redirected = await maybeRedirectToUnreadNews();
     if (redirected) return;
-
-    const me = await loadMe();
     if (me && me.guest !== true) {
       try {
-        const m = await import("/static/js/identity-links.js?v=2");
+        const m = await import("/static/js/identity-links.js?v=4");
         m.persistIdentityLinksFromMe(me);
       } catch {
         /* ignore */
@@ -139,13 +148,13 @@
         }
       }
       if (btnLogout) btnLogout.style.display = "none";
-      if (balanceWrap) balanceWrap.style.display = "none";
+      if (balanceWrap) balanceWrap.setAttribute("hidden", "");
       if (btnPay) btnPay.style.display = "none";
       if (navSettings) navSettings.style.display = "none";
     } else {
       if (navLogin) navLogin.style.display = "none";
       if (btnLogout) btnLogout.style.removeProperty("display");
-      if (balanceWrap) balanceWrap.style.removeProperty("display");
+      if (balanceWrap) balanceWrap.removeAttribute("hidden");
       if (balanceEl) balanceEl.textContent = formatBalance(me.balance);
       if (balanceWrap && balanceEl) {
         balanceWrap.title = `Баланс: ${balanceEl.textContent}`;

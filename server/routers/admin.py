@@ -340,7 +340,7 @@ def admin_catalog_openrouter_check(_: str = Depends(require_admin)):
 
     Флаг catalogLooksAligned учитывает только чат: именно по этим id синхронизируются цены из полей pricing в JSON.
     Модели только для эмбеддингов там часто отсутствуют; пояснение см. в embeddingsCatalog.noteRu ответа.
-    Исключения: openrouter/auto, free-router slug, локальные ориентиры видео/STT/Lyria.
+    Исключения: опциональный OPENROUTER_FREE_ROUTER_SLUG, локальные ориентиры видео/STT/Lyria.
     """
     try:
         from ..openrouter_catalog_check import check_catalog_vs_openrouter

@@ -21,10 +21,10 @@ from .openrouter_price_sync import (
 
 def _exempt_openrouter_slug_slugs() -> frozenset[str]:
     s = get_settings()
-    out = {
-        str(s.openrouter_free_router_slug),
-        "openrouter/auto",
-    }
+    out: set[str] = set()
+    r = (s.openrouter_free_router_slug or "").strip()
+    if r:
+        out.add(r)
     out.update(VIDEO_USD_PER_SEC.keys())
     out.update(TRANSCRIPTION_USD_PER_MINUTE_FALLBACK.keys())
     out.update(LYRIA_USD_PER_MEDIA_UNIT.keys())

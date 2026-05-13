@@ -11,8 +11,9 @@ if TYPE_CHECKING:
 
 
 def openai_gpt_audio_style_model(model: "AiModel") -> bool:
-    """Семейство GPT Audio в каталоге: speech + music_generation (две стадии голос→TTS и т.п.)."""
-    return bool(model.supports_music_generation and model.supports_speech)
+    """Модели OpenAI GPT Audio (озвучка): speech + slug с «gpt-audio»."""
+    slug = (getattr(model, "slug", None) or "").lower()
+    return bool(model.supports_speech and "gpt-audio" in slug)
 
 
 def _ffmpeg_demuxer_for_format(fmt: str) -> list[str]:
