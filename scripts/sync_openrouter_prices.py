@@ -96,8 +96,7 @@ def main() -> None:
             ", ".join(missing),
         )
     print(
-        "\nСемантика колонок: input/output = ₽ за 1M токенов (чат); видео: input = ₽/с; STT: input = ₽/мин; "
-        "Lyria: fixed_price."
+        "\nСемантика колонок: input/output = ₽ за 1M токенов (чат); видео: input = ₽/с; STT: input = ₽/мин."
     )
 
 

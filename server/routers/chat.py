@@ -54,10 +54,6 @@ _ALLOWED_TTS_VOICES = frozenset(
 # Без этого поля OpenRouter для части моделей подставляет огромный max_tokens (~65536 completion),
 # резервируя лимит под «худший случай» — при малом балансе аккаунта OpenRouter запрос отклоняют.
 _DEFAULT_CHAT_COMPLETION_MAX_TOKENS = 8192
-# Lyria (Pro и Clip): один max_tokens для OpenRouter — отдельное завышение для Pro давало текст без звука
-# у части ключей из-за резерва лимита у провайдера; финальный аудиобинарник иногда в choices[].message, не в delta.
-_LYRIA_COMPLETION_MAX_TOKENS = 32768
-_MINIMAX_M2_MUSIC_COMPLETION_MAX_TOKENS = 32768
 # GPT Audio на OpenRouter: выходной звук считается «дорогими» completion-токенами; при 8192 часто только текст.
 _GPT_AUDIO_COMPLETION_MAX_TOKENS = 16384
 
@@ -66,10 +62,6 @@ def _default_max_tokens_for_model(model: AiModel, body_max: int | None) -> int:
     if body_max is not None:
         return body_max
     slug = (model.slug or "").lower()
-    if model.supports_music_generation and "lyria" in slug:
-        return _LYRIA_COMPLETION_MAX_TOKENS
-    if model.supports_music_generation and slug.startswith("minimax/minimax-m2"):
-        return _MINIMAX_M2_MUSIC_COMPLETION_MAX_TOKENS
     if model.supports_speech and "gpt-audio" in slug:
         return _GPT_AUDIO_COMPLETION_MAX_TOKENS
     return _DEFAULT_CHAT_COMPLETION_MAX_TOKENS
@@ -81,38 +73,6 @@ def _normalize_tts_voice(raw: str | None) -> str:
     if v in _ALLOWED_TTS_VOICES:
         return v
     return _DEFAULT_TTS_VOICE
-
-
-_LYRIA_OPENROUTER_SYSTEM = (
-    "Music generation: produce audio for the user's style request. Prefer concrete style words in English "
-    "in the prompt when possible."
-)
-
-
-def _inject_lyria_router_system(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Короткий system для Lyria: длинные «ты модель…» промпты иногда уводят ответ в текст ассистента."""
-    if not messages:
-        return [{"role": "system", "content": _LYRIA_OPENROUTER_SYSTEM}]
-    first = messages[0]
-    role = str(first.get("role") or "").lower()
-    if role == "system":
-        c0 = first.get("content")
-        if isinstance(c0, str) and c0.strip():
-            merged = f"{_LYRIA_OPENROUTER_SYSTEM}\n\n{c0.strip()}"
-        elif isinstance(c0, list):
-            merged_parts: list[dict[str, Any]] = [
-                {"type": "text", "text": _LYRIA_OPENROUTER_SYSTEM},
-                *[p for p in c0 if isinstance(p, dict)],
-            ]
-            out = list(messages)
-            out[0] = {**first, "content": merged_parts}
-            return out
-        else:
-            merged = _LYRIA_OPENROUTER_SYSTEM
-        out = list(messages)
-        out[0] = {**first, "content": merged}
-        return out
-    return [{"role": "system", "content": _LYRIA_OPENROUTER_SYSTEM}, *messages]
 
 
 def _messages_contain_input_audio(msg_dicts: list[dict[str, Any]]) -> bool:
@@ -209,7 +169,7 @@ def _openrouter_http_error_detail(resp: httpx.Response, *, context: str = "OpenR
     raw_lower = raw.lower()
     if "user location is not supported" in raw_lower:
         return (
-            "Google: доступ к API из вашего региона не поддерживается (Lyria и часть Gemini идут через Google). "
+            "Google: доступ к API из вашего региона не поддерживается (часть моделей Gemini идёт через Google). "
             "Это ограничение провайдера, не II Proxy."
         )
 
@@ -710,8 +670,6 @@ async def _handle_chat_json(
         raw_msgs = [m.model_dump() for m in body.messages]
     tts_v = _normalize_tts_voice(body.tts_voice)
     msgs_for_upstream = [m.model_dump() for m in body.messages]
-    if model.supports_music_generation and "lyria" in (model.slug or "").lower():
-        msgs_for_upstream = _inject_lyria_router_system(msgs_for_upstream)
     payload: dict[str, Any] = {
         "model": body.model_slug,
         "messages": msgs_for_upstream,
@@ -731,15 +689,6 @@ async def _handle_chat_json(
             "voice": tts_v,
             "format": "pcm16" if body.stream else "wav",
         }
-    elif model.supports_music_generation and "lyria" in (model.slug or "").lower():
-        # Важно: не передавать audio.voice — это поле TTS (OpenAI/Gemini Flash TTS); с ним OpenRouter
-        # может отдать обычный текстовый ответ вместо музыки Lyria.
-        payload["modalities"] = ["text", "audio"]
-        payload["audio"] = {"format": "pcm16" if body.stream else "wav"}
-    elif model.supports_music_generation and (model.slug or "").startswith("minimax/minimax-m2"):
-        # MiniMax M2: как Lyria — без voice, иначе провайдер может трактовать запрос как TTS/чат.
-        payload["modalities"] = ["text", "audio"]
-        payload["audio"] = {"format": "pcm16" if body.stream else "wav"}
 
     if not body.stream:
         try:

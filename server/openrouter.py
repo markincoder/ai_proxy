@@ -46,8 +46,12 @@ def openrouter_headers_get() -> dict[str, str]:
     return openrouter_headers(False)
 
 
-async def chat_completions(body: dict[str, Any]) -> httpx.Response:
-    async with openrouter_async_client() as client:
+async def chat_completions(
+    body: dict[str, Any],
+    *,
+    timeout: httpx.Timeout | None = None,
+) -> httpx.Response:
+    async with openrouter_async_client(timeout=timeout) as client:
         return await client.post(
             f"{openrouter_base_url()}/chat/completions",
             headers=openrouter_headers(True),

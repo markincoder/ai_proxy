@@ -91,6 +91,9 @@ export async function consumeStream(
   let streamErrorReported = false;
   /** Уже брали chunked delta.audio — финальный choices[0].message.audio часто дублирует тот же трек целиком. */
   let hadStreamedDeltaAudio = false;
+  let streamedAudioB64Chars = 0;
+  /** Ниже порога считаем стрим «обрывком» и берём финальный message.audio целиком. */
+  const MIN_STREAMED_AUDIO_B64_TO_TRUST = 1024;
 
   function emitNormalizedAudio(candidate) {
     if (candidate == null || typeof onAudioDelta !== "function") return;
@@ -98,8 +101,16 @@ export async function consumeStream(
     if (typeof audd === "string") audd = { data: audd };
     if (audd && typeof audd === "object") {
       onAudioDelta(audd);
+      if (audd._replaceAudio === true) {
+        if (typeof audd.data === "string" && audd.data.length > 0) {
+          hadStreamedDeltaAudio = true;
+          streamedAudioB64Chars = audd.data.length;
+        }
+        return;
+      }
       if (typeof audd.data === "string" && audd.data.length > 0) {
         hadStreamedDeltaAudio = true;
+        streamedAudioB64Chars += audd.data.length;
       }
     }
   }
@@ -198,8 +209,23 @@ export async function consumeStream(
 
         const msg0 = j.choices?.[0]?.message;
         emitAudioPartsFromMixedContent(msg0?.content, emitNormalizedAudio);
-        if (msg0?.audio != null && !hadStreamedDeltaAudio) {
-          emitNormalizedAudio(msg0.audio);
+        if (msg0?.audio != null) {
+          const skipFinalAudio =
+            hadStreamedDeltaAudio &&
+            streamedAudioB64Chars >= MIN_STREAMED_AUDIO_B64_TO_TRUST;
+          if (!skipFinalAudio) {
+            const rawA = msg0.audio;
+            const normalized =
+              typeof rawA === "string" ? { data: rawA } : { ...rawA };
+            if (
+              hadStreamedDeltaAudio &&
+              typeof normalized.data === "string" &&
+              normalized.data.length > 0
+            ) {
+              normalized._replaceAudio = true;
+            }
+            emitNormalizedAudio(normalized);
+          }
         }
 
         const text = flattenOpenRouterDeltaContent(delta?.content);
@@ -219,7 +245,12 @@ export async function consumeStream(
             typeof msg0.audio.transcript === "string"
               ? msg0.audio.transcript
               : "";
-          if (transcript) onDelta(transcript);
+          if (transcript) {
+            onDelta(transcript);
+          } else {
+            const msgText = flattenOpenRouterDeltaContent(msg0?.content);
+            if (msgText) onDelta(msgText);
+          }
         }
       } catch {
         /* ignore */

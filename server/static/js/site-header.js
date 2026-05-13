@@ -5,7 +5,7 @@
 (function () {
   const LINKS = [
     { href: "/news", label: "Новости" },
-    { href: "/", label: "Чат" },
+    { href: "/", label: "Чат", navClass: "nav-link--chat" },
     { href: "/tariffs", label: "Модели и тарифы" },
     { href: "/settings", label: "Настройки", id: "nav-settings", loggedInOnly: true },
     { href: "/contact", label: "Контакты", id: "nav-contact" },
@@ -54,10 +54,11 @@
     const activeHref = activeNavHrefForPath(path);
     const linksHtml = LINKS.map((item) => {
       const active = item.href === activeHref ? " active" : "";
+      const extraClass = item.navClass ? ` ${item.navClass}` : "";
       const idAttr = item.id ? ` id="${item.id}"` : "";
       const styleAttr =
         item.adminOnly || item.loggedInOnly ? ` style="display: none"` : "";
-      return `<a href="${item.href}" class="nav-link${active}"${idAttr}${styleAttr}>${item.label}</a>`;
+      return `<a href="${item.href}" class="nav-link${active}${extraClass}"${idAttr}${styleAttr}>${item.label}</a>`;
     }).join("");
 
     root.outerHTML = `<header class="top-nav" role="navigation" aria-label="Главное меню">

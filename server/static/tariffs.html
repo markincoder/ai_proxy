@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,13 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Модели и тарифы — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=86" />
+    <link rel="stylesheet" href="/static/css/style.css?v=88" />
   </head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=10" defer></script>
+    <script src="/static/js/site-header.js?v=11" defer></script>
 
     <main class="main-shell layout-wide page-tariffs-main">
       <h1 class="page-title">Все модели и тарифы</h1>
@@ -55,7 +55,6 @@
         { id: "video", emoji: "🎬", title: "Видео" },
         { id: "transcription", emoji: "📝", title: "Транскрипция" },
         { id: "speech", emoji: "🎙️", title: "Голос" },
-        { id: "music", emoji: "🎵", title: "Музыка" },
         { id: "embeddings", emoji: "🔗", title: "Эмбеддинги" },
       ];
 
@@ -93,7 +92,6 @@
         if (m.supportsImageGeneration === true) push("image");
         if (modelProducesSpokenChatAudio(m)) push("speech");
         if (m.supportsTranscription === true) push("transcription");
-        if (m.supportsMusicGeneration === true) push("music");
 
         const textOk =
           m.supportsChat !== false &&
@@ -101,7 +99,12 @@
           m.supportsMusicGeneration !== true;
         if (textOk) push("text");
 
-        if (out.length === 0) push("text");
+        if (
+          out.length === 0 &&
+          (m.supportsMusicGeneration !== true || modelProducesSpokenChatAudio(m))
+        ) {
+          push("text");
+        }
         return out;
       }
 
@@ -116,7 +119,6 @@
           "image",
           "speech",
           "transcription",
-          "music",
           "text",
         ];
         for (const id of order) {
@@ -142,13 +144,6 @@
         return s;
       }
 
-      function modelProducesChatAudio(m) {
-        const s = String(m.slug || "").toLowerCase();
-        if (s.includes("lyria")) return true;
-        if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
-        return m.supportsSpeech === true && m.supportsMusicGeneration === true;
-      }
-
       function billingBadge(m) {
         const c = m.capabilities || {};
         if (c.free) return "Бесплатно";
@@ -157,7 +152,6 @@
         if (c.speech) return "Голос · озвучка";
         if (c.transcription) return "Транскрипция (отдельный API)";
         if (c.embeddings === true && c.chat === false) return "Эмбеддинги (отдельный API)";
-        if (c.musicGeneration) return "Музыка";
         return "Текст (токены)";
       }
 
@@ -231,7 +225,6 @@
         } else if (
           !m.pricingNoteRu &&
           !m.capabilities?.imageGeneration &&
-          !m.capabilities?.musicGeneration &&
           !m.capabilities?.speech &&
           !m.capabilities?.transcription
         ) {
@@ -270,7 +263,6 @@
         const sttOnly =
           m.capabilities?.transcription &&
           !m.capabilities?.speech &&
-          !m.capabilities?.musicGeneration &&
           !m.capabilities?.imageGeneration &&
           !m.capabilities?.videoGeneration;
         const catJoined = categoryTitlesJoined(m, favSetGlobal);
@@ -392,6 +384,10 @@
           .catch(() => ({ guest: true })),
       ])
         .then(async ([models, favMod, me]) => {
+          models = models.filter(
+            (m) =>
+              !(m.supportsMusicGeneration === true && !modelProducesSpokenChatAudio(m)),
+          );
           const catalogSlugs = models.map((x) => String(x.slug || ""));
           if (me && me.guest === false) {
             favMod.setModelFavoritesServerSync(true);
@@ -411,7 +407,6 @@
             video: [],
             transcription: [],
             speech: [],
-            music: [],
           };
           for (const m of models) {
             const slug = String(m.slug || "");
@@ -514,24 +509,6 @@
                 }
                 panel.appendChild(grid);
               }
-            } else if (g.id === "music") {
-              const audioMs = modelList.filter((m) => modelProducesChatAudio(m));
-              const textMs = modelList.filter((m) => !modelProducesChatAudio(m));
-              function addMusicSubsection(title, models) {
-                if (models.length === 0) return;
-                const lab = document.createElement("p");
-                lab.className = "tariffs-subsection-label";
-                lab.textContent = title;
-                panel.appendChild(lab);
-                const subGrid = document.createElement("div");
-                subGrid.className = "tariffs-grid";
-                for (const m of models) {
-                  appendModelToGrid(subGrid, m, showCat);
-                }
-                panel.appendChild(subGrid);
-              }
-              addMusicSubsection("Генерация аудио", audioMs);
-              addMusicSubsection("Только текст (без готового звука)", textMs);
             } else if (g.id === "speech") {
               const note = document.createElement("p");
               note.className = "hint";

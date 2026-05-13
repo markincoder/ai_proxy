@@ -1,4 +1,4 @@
-import { consumeStream } from "./sse.js?v=26";
+import { consumeStream } from "./sse.js?v=27";
 import { persistIdentityLinksFromMe } from "./identity-links.js?v=4";
 import {
   getFavoriteSetForCatalog,
@@ -234,7 +234,7 @@ function escapeHtml(s) {
 /**
  * Собираем бинарник из SSE (base64), подбираем MIME для <audio>.
  * — Готовые контейнеры (RIFF WAV, MP3, OGG, FLAC) не трогаем.
- * — Сиротский PCM16: OpenAI TTS ~24kHz mono; Lyria (Google) часто 48kHz stereo (см. OpenRouter).
+ * — Сиротский PCM16: OpenAI TTS ~24kHz mono (см. OpenRouter / GPT Audio).
  */
 function pcm16ToWavBlob(pcm, sampleRate, numChannels) {
   const bitsPerSample = 16;
@@ -271,8 +271,6 @@ function pcm16ToWavBlob(pcm, sampleRate, numChannels) {
 }
 
 function assistantResponseBytesToAudioBlob(bytes, opts = {}) {
-  const slug = String(opts.modelSlug || "").toLowerCase();
-  const lyria = slug.includes("lyria");
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   if (u8.length === 0) {
     return new Blob([], { type: "audio/wav" });
@@ -314,9 +312,6 @@ function assistantResponseBytesToAudioBlob(bytes, opts = {}) {
     u8[3] === 0x63
   ) {
     return new Blob([u8], { type: "audio/flac" });
-  }
-  if (lyria) {
-    return pcm16ToWavBlob(u8, 48000, 2);
   }
   return pcm16ToWavBlob(u8, 24000, 1);
 }
@@ -368,9 +363,6 @@ function modelCardPricingLine(m) {
   const fixedN = Number(m.fixedPrice);
   const fixed = Number.isFinite(fixedN) && fixedN > 0 ? formatRubShort(fixedN) : "";
 
-  if (m.supportsMusicGeneration === true && fixed) {
-    return `мин. ${fixed} ₽/запрос · вх ${ins || "—"} · вых ${outs || "—"} ₽/1M`;
-  }
   if (ins || outs) {
     return `вх ${ins || "—"} · вых ${outs || "—"} ₽/1M`;
   }
@@ -390,20 +382,11 @@ function modelAllowsMicrophone(m) {
   return true;
 }
 
-/** Озвучка ответа в чате (GPT Audio на OpenRouter): не «голос на входе — текст», не Lyria. */
+/** Озвучка ответа в чате (GPT Audio на OpenRouter): не «голос на входе — текст». */
 function modelProducesSpokenChatAudio(m) {
   if (!m || typeof m !== "object") return false;
   const s = String(m.slug || "").toLowerCase();
   return m.supportsSpeech === true && s.includes("gpt-audio");
-}
-
-/** Готовое аудио в ответ (Lyria; GPT Audio — речь/озвучка, не генерация музыки). */
-function modelProducesChatAudio(m) {
-  if (!m || typeof m !== "object") return false;
-  const s = String(m.slug || "").toLowerCase();
-  if (s.includes("lyria")) return true;
-  if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
-  return m.supportsSpeech === true && m.supportsMusicGeneration === true;
 }
 
 /** Все вкладки, куда имеет смысл вывести модель (может быть несколько). */
@@ -424,16 +407,20 @@ function modelGroupIds(m) {
   if (m.supportsImageGeneration === true) push("image");
   if (modelProducesSpokenChatAudio(m)) push("speech");
   if (m.supportsTranscription === true) push("transcription");
-  if (m.supportsMusicGeneration === true) push("music");
 
-  /** Обычный текстовый чат: не STT-only и не музыка (музыка — вкладка «Музыка»). */
+  /** Обычный текстовый чат: не STT-only и не только генерация музыки в БД (legacy). */
   const textOk =
     m.supportsChat !== false &&
     !isSttOnlyModel(m) &&
     m.supportsMusicGeneration !== true;
   if (textOk) push("text");
 
-  if (out.length === 0) push("text");
+  if (
+    out.length === 0 &&
+    (m.supportsMusicGeneration !== true || modelProducesSpokenChatAudio(m))
+  ) {
+    push("text");
+  }
   return out;
 }
 
@@ -448,7 +435,6 @@ function primaryModelGroupId(m, favSet) {
     "image",
     "speech",
     "transcription",
-    "music",
     "text",
   ];
   for (const id of order) {
@@ -476,7 +462,6 @@ const MODEL_GROUPS = [
   { id: "video", emoji: "🎬", title: "Видео" },
   { id: "transcription", emoji: "📝", title: "Транскрипция" },
   { id: "speech", emoji: "🎙️", title: "Голос" },
-  { id: "music", emoji: "🎵", title: "Музыка" },
 ];
 
 function modelPickerFilterHaystack(m, favSet) {
@@ -559,7 +544,7 @@ const HINT_SUPPORT_IF_REPEATS =
   " Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
 /** Ответ/отказ пришёл от внешнего провайдера модели — общее пояснение для пользователя */
 const MSG_CHAT_PROVIDER_CONTACTS =
-  "Это сообщение от провайдера модели (не сбой II Proxy). Напишите через раздел «Контакты» на сайте — поможем разобраться и при необходимости исправим настройки.";
+  "Источник ответа — провайдер модели, не сбой II Proxy. Если нужно разобрать ситуацию — раздел «Контакты».";
 
 /**
  * Понятные подсказки к ответам модели в потоке.
@@ -597,7 +582,7 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
     low.includes("location is not supported for the api")
   ) {
     return (
-      "Google отклоняет запрос: для вашего региона (или IP) доступ к этому API запрещён (часто так у Lyria и части Gemini через OpenRouter). " +
+      "Google отклоняет запрос: для вашего региона (или IP) доступ к этому API запрещён (часть моделей Google через OpenRouter). " +
       "Это ограничение провайдера Google, не II Proxy. Попробуйте сеть в поддерживаемом регионе или другую модель (например GPT Audio — озвучка текста). " +
       MSG_CHAT_PROVIDER_CONTACTS
     );
@@ -613,7 +598,7 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
     }
     if (isFree) {
       return (
-        "Провайдер не вернул ответ (часто так бывает с **новыми** или **редкими** моделями). " +
+        "Провайдер не вернул ответ (часто так бывает с новыми или редкими моделями). " +
         "Повторите запрос, смените модель или выберите другую бесплатную из списка. " +
         MSG_CHAT_PROVIDER_CONTACTS
       );
@@ -640,7 +625,7 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
   if (
     low.includes("finish_reason=error") ||
     low.includes("ошибка провайдера") ||
-    low.includes("provider") && low.includes("error")
+    (low.includes("provider") && low.includes("error"))
   ) {
     return providerBlob();
   }
@@ -804,7 +789,11 @@ async function main() {
       )
     : [];
   const sttModels = models.filter((x) => x.supportsTranscription === true);
-  const chatModels = models.filter((m) => m.supportsChat !== false);
+  const chatModels = models.filter(
+    (m) =>
+      m.supportsChat !== false &&
+      !(m.supportsMusicGeneration === true && !modelProducesSpokenChatAudio(m)),
+  );
 
   if (!isGuest) {
     setModelFavoritesServerSync(true);
@@ -1312,7 +1301,6 @@ async function main() {
         video: [],
         transcription: [],
         speech: [],
-        music: [],
       };
       for (const m of chatModels) {
         if (favSet.has(m.slug)) buckets.favorite.push(m);
@@ -1521,23 +1509,6 @@ async function main() {
           row.setAttribute("role", "group");
           row.setAttribute("aria-label", "Избранные модели");
           for (const m of list) {
-            row.appendChild(buildModelButton(m));
-          }
-          panel.appendChild(row);
-        } else if (g.id === "music") {
-          const audioMs = list.filter((m) => modelProducesChatAudio(m));
-          const textOnlyMs = list.filter((m) => !modelProducesChatAudio(m));
-          const row = document.createElement("div");
-          row.className = "model-scroll-row";
-          row.setAttribute("role", "group");
-          row.setAttribute(
-            "aria-label",
-            "Музыка: сначала генерация аудио, затем текстовые модели",
-          );
-          for (const m of audioMs) {
-            row.appendChild(buildModelButton(m));
-          }
-          for (const m of textOnlyMs) {
             row.appendChild(buildModelButton(m));
           }
           panel.appendChild(row);
@@ -2871,8 +2842,16 @@ async function main() {
       },
       undefined,
       (aud) => {
-        if (aud && typeof aud === "object" && aud.data) audioParts.push(aud.data);
-        else if (typeof aud === "string" && aud) audioParts.push(aud);
+        if (aud && typeof aud === "object" && aud._replaceAudio === true) {
+          audioParts.length = 0;
+        }
+        if (aud && typeof aud === "object" && aud.data) {
+          audioParts.push(aud.data);
+          typing.remove();
+        } else if (typeof aud === "string" && aud) {
+          audioParts.push(aud);
+          typing.remove();
+        }
       },
     );
 
@@ -2910,10 +2889,6 @@ async function main() {
           }
           if (audioBlock) {
             audioBlock.style.display = "block";
-            const lab = audioBlock.querySelector(".assistant-audio-label");
-            if (lab && slug.toLowerCase().includes("lyria")) {
-              lab.textContent = "Сгенерированное аудио";
-            }
           }
         }
       } catch (e) {

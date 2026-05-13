@@ -9,7 +9,7 @@ _OUTPUT_RESERVE_TOKENS = 2048
 _OUTPUT_RESERVE_IMAGE_GEN = 8192
 # Бюджет токенов на одно вложенное изображение (vision), грубая верхняя оценка.
 _VISION_IMAGE_TOKEN_BUDGET = 2500
-# Резерв выхода для музыки/аудио (длинный ответ modaudio).
+# Резерв выхода для озвучки / аудио в ответе (длинный completion).
 _OUTPUT_RESERVE_MUSIC = 8192
 
 

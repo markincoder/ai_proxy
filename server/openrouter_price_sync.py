@@ -48,11 +48,6 @@ TRANSCRIPTION_USD_PER_MINUTE_FALLBACK: dict[str, Decimal] = {
     "openai/whisper-large-v3-turbo": Decimal("0.006"),
 }
 
-LYRIA_USD_PER_MEDIA_UNIT: dict[str, Decimal] = {
-    "google/lyria-3-pro-preview": Decimal("0.08"),
-    "google/lyria-3-clip-preview": Decimal("0.048"),
-}
-
 
 @dataclass(frozen=True)
 class ApplyRow:
@@ -159,29 +154,6 @@ def build_apply_rows(
             continue
 
         pair = compute_token_rub(slug, models, usd_rub, mult)
-
-        lyr = LYRIA_USD_PER_MEDIA_UNIT.get(slug)
-        if lyr is not None:
-            converted = _rub_ceil_2(lyr * factor)
-            sf = spec.get("fixed_price")
-            if sf is None:
-                fixed = converted
-            else:
-                fixed = _rub_ceil_2(max(converted, _decimal_from_any(sf)))
-            if pair is None or (pair[0] <= 0 and pair[1] <= 0):
-                rin = _decimal_from_any(spec.get("input_price_per_mn"))
-                rout = _decimal_from_any(spec.get("output_price_per_mn"))
-            else:
-                rin, rout = pair
-            updates.append(
-                ApplyRow(
-                    slug=slug,
-                    input_price_per_mn=rin,
-                    output_price_per_mn=rout,
-                    set_fixed_price=fixed,
-                )
-            )
-            continue
 
         if spec.get("supports_transcription"):
             tpm = TRANSCRIPTION_USD_PER_MINUTE_FALLBACK.get(slug)
