@@ -397,6 +397,15 @@ function modelProducesSpokenChatAudio(m) {
   return m.supportsSpeech === true && s.includes("gpt-audio");
 }
 
+/** Готовое аудио в ответ (Lyria; GPT Audio — речь/озвучка, не генерация музыки). */
+function modelProducesChatAudio(m) {
+  if (!m || typeof m !== "object") return false;
+  const s = String(m.slug || "").toLowerCase();
+  if (s.includes("lyria")) return true;
+  if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
+  return m.supportsSpeech === true && m.supportsMusicGeneration === true;
+}
+
 /** Все вкладки, куда имеет смысл вывести модель (может быть несколько). */
 function modelGroupIds(m) {
   if (!m || typeof m !== "object") return ["text"];
@@ -415,8 +424,9 @@ function modelGroupIds(m) {
   if (m.supportsImageGeneration === true) push("image");
   if (modelProducesSpokenChatAudio(m)) push("speech");
   if (m.supportsTranscription === true) push("transcription");
+  if (m.supportsMusicGeneration === true) push("music");
 
-  /** Обычный текстовый чат: не STT-only и не музыка (музыка в чате не предлагается). */
+  /** Обычный текстовый чат: не STT-only и не музыка (музыка — вкладка «Музыка»). */
   const textOk =
     m.supportsChat !== false &&
     !isSttOnlyModel(m) &&
@@ -438,6 +448,7 @@ function primaryModelGroupId(m, favSet) {
     "image",
     "speech",
     "transcription",
+    "music",
     "text",
   ];
   for (const id of order) {
@@ -465,6 +476,7 @@ const MODEL_GROUPS = [
   { id: "video", emoji: "🎬", title: "Видео" },
   { id: "transcription", emoji: "📝", title: "Транскрипция" },
   { id: "speech", emoji: "🎙️", title: "Голос" },
+  { id: "music", emoji: "🎵", title: "Музыка" },
 ];
 
 function modelPickerFilterHaystack(m, favSet) {
@@ -792,9 +804,7 @@ async function main() {
       )
     : [];
   const sttModels = models.filter((x) => x.supportsTranscription === true);
-  const chatModels = models.filter(
-    (m) => m.supportsChat !== false && m.supportsMusicGeneration !== true,
-  );
+  const chatModels = models.filter((m) => m.supportsChat !== false);
 
   if (!isGuest) {
     setModelFavoritesServerSync(true);
@@ -1302,6 +1312,7 @@ async function main() {
         video: [],
         transcription: [],
         speech: [],
+        music: [],
       };
       for (const m of chatModels) {
         if (favSet.has(m.slug)) buckets.favorite.push(m);
@@ -1510,6 +1521,23 @@ async function main() {
           row.setAttribute("role", "group");
           row.setAttribute("aria-label", "Избранные модели");
           for (const m of list) {
+            row.appendChild(buildModelButton(m));
+          }
+          panel.appendChild(row);
+        } else if (g.id === "music") {
+          const audioMs = list.filter((m) => modelProducesChatAudio(m));
+          const textOnlyMs = list.filter((m) => !modelProducesChatAudio(m));
+          const row = document.createElement("div");
+          row.className = "model-scroll-row";
+          row.setAttribute("role", "group");
+          row.setAttribute(
+            "aria-label",
+            "Музыка: сначала генерация аудио, затем текстовые модели",
+          );
+          for (const m of audioMs) {
+            row.appendChild(buildModelButton(m));
+          }
+          for (const m of textOnlyMs) {
             row.appendChild(buildModelButton(m));
           }
           panel.appendChild(row);

@@ -7,12 +7,17 @@
   --bg-gradient: linear-gradient(180deg, #eef2ff 0%, #f4f6fb 32%, #f8fafc 100%);
   --fg: #0f172a;
   --fg-soft: #334155;
+  --text: var(--fg);
   --border: #e2e8f0;
   --muted: #64748b;
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-soft: #eef2ff;
   --surface: #ffffff;
+  --input-bg: #ffffff;
+  --input-border: #b8c4d4;
+  --input-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --panel: #f1f5f9;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 24px rgba(15, 23, 42, 0.08);
   --radius: 0.75rem;
@@ -225,18 +230,49 @@ a {
   flex-shrink: 0;
 }
 
+textarea,
 select,
 input[type="text"],
 input[type="password"],
+input[type="email"],
 input[type="tel"],
-input[type="number"] {
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="date"],
+input[type="datetime-local"] {
   padding: 0.55rem 0.85rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius);
   font-size: 0.875rem;
-  background: var(--surface);
+  background: var(--input-bg);
   color: var(--fg);
   font-family: inherit;
+  box-shadow: var(--input-shadow);
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+textarea:focus,
+select:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+input[type="date"]:focus,
+input[type="datetime-local"]:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--input-border));
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent),
+    var(--input-shadow);
 }
 
 /* Выбор модели: вкладки по категориям + горизонтальная прокрутка карточек */
@@ -266,13 +302,14 @@ input[type="number"] {
   min-width: 0;
   margin: 0;
   padding: 0.32rem 0.85rem;
-  border: 1px solid transparent;
+  border: 1px solid var(--input-border);
   border-radius: 999px;
-  background: rgba(248, 250, 252, 0.9);
+  background: var(--input-bg);
   color: var(--fg-soft);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
+  box-shadow: var(--input-shadow);
 }
 
 .model-picker-search::placeholder {
@@ -281,15 +318,17 @@ input[type="number"] {
 }
 
 .model-picker-search:hover {
-  background: #f1f5f9;
-  border-color: var(--border);
+  background: var(--input-bg);
+  border-color: color-mix(in oklab, var(--accent) 22%, var(--input-border));
 }
 
 .model-picker-search:focus {
   outline: none;
-  background: var(--surface);
-  border-color: #c7d2fe;
-  box-shadow: var(--shadow-sm);
+  background: var(--input-bg);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--input-border));
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent),
+    var(--input-shadow);
   color: var(--fg);
 }
 
@@ -1264,15 +1303,19 @@ input[type="number"] {
 .login-field input {
   padding: 0.55rem 0.65rem;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--fg);
   font-size: 0.9375rem;
+  box-shadow: var(--input-shadow);
 }
 
 .login-field input:focus {
-  outline: 2px solid color-mix(in oklab, var(--accent, #818cf8) 70%, white);
-  outline-offset: 0;
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--input-border));
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent),
+    var(--input-shadow);
 }
 
 .login-submit {
@@ -1563,10 +1606,11 @@ select.settings-select {
   max-width: 28rem;
   padding: 0.45rem 0.6rem;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--panel);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--fg);
   font: inherit;
+  box-shadow: var(--input-shadow);
 }
 
 .account-lead {
@@ -2576,10 +2620,11 @@ select.settings-select {
   font: inherit;
   font-size: 0.92rem;
   border-radius: 0.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   padding: 0.6rem 0.7rem;
-  background: var(--bg);
+  background: var(--input-bg);
   color: var(--fg);
+  box-shadow: var(--input-shadow);
 }
 
 .support-field textarea {
@@ -2753,11 +2798,12 @@ select.settings-select {
   box-sizing: border-box;
   padding: 0.45rem 0.65rem;
   border-radius: 0.45rem;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--text);
   font: inherit;
   font-size: 0.875rem;
+  box-shadow: var(--input-shadow);
 }
 
 .tariff-card-cat {
@@ -3144,11 +3190,12 @@ article.tariff-card[hidden] {
   min-width: 8rem;
   max-width: 22rem;
   padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: 0.45rem;
   font: inherit;
   font-size: 0.875rem;
-  background: #fff;
+  background: var(--input-bg);
+  box-shadow: var(--input-shadow);
 }
 
 .btn-mic--recording {

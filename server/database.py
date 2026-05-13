@@ -653,6 +653,8 @@ def init_db() -> None:
             db.add(_ai_model_from_spec(s))
         _purge_models_not_in_catalog(db, {str(s["slug"]) for s in specs})
         _sync_models_from_specs(db)
+        # Имена и описания из JSON (исправляет устаревшие подписи в БД, напр. «музыка в чате»).
+        apply_user_facing_from_specs(db, dry_run=False)
         _ensure_site_banner_row(db)
         db.commit()
 
