@@ -135,9 +135,6 @@
             <p id="stt-mode-hint" class="hint footer-hint" style="display: none">
               Выбрана модель <strong>только распознавания речи</strong> (вкладка «Транскрипция»): запись с микрофона или аудиофайл попадает в чат как текст и оплачивается по тарифу. Для диалога с нейросетью переключитесь на модель из «Текст и чат» или другую диалоговую.
             </p>
-            <p id="music-text-hint" class="hint footer-hint" style="display: none">
-              У этой модели нет потока <strong>готового аудио</strong> в ответе API — только текст. Для <strong>музыки</strong> — <strong>Lyria 3</strong> во вкладке «Музыка». Для <strong>озвучки</strong> ответа — <strong>GPT Audio</strong> во вкладке «Голос».
-            </p>
             <p id="video-mode-hint" class="hint footer-hint" style="display: none">
               Провайдер может отклонить и <strong>нейтральный</strong> запрос (политика контента, ложные срабатывания). Смените формулировку сцены или другую видео-модель.
             </p>
@@ -222,7 +219,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
     <script src="/static/js/app-nav.js?v=10" defer></script>
-    <script type="module" src="/static/js/chat.js?v=121"></script>
+    <script type="module" src="/static/js/chat.js?v=125"></script>
     <script>
       document.getElementById("btn-attach").onclick = () =>
         document.getElementById("file-input").click();

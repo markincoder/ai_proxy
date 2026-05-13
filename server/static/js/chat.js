@@ -415,9 +415,8 @@ function modelGroupIds(m) {
   if (m.supportsImageGeneration === true) push("image");
   if (modelProducesSpokenChatAudio(m)) push("speech");
   if (m.supportsTranscription === true) push("transcription");
-  if (m.supportsMusicGeneration === true) push("music");
 
-  /** Обычный текстовый чат: не STT-only и не музыка (музыка только во вкладке «Музыка»). */
+  /** Обычный текстовый чат: не STT-only и не музыка (музыка в чате не предлагается). */
   const textOk =
     m.supportsChat !== false &&
     !isSttOnlyModel(m) &&
@@ -439,7 +438,6 @@ function primaryModelGroupId(m, favSet) {
     "image",
     "speech",
     "transcription",
-    "music",
     "text",
   ];
   for (const id of order) {
@@ -459,21 +457,6 @@ function modelGroupId(m) {
   return primaryModelGroupId(m, undefined);
 }
 
-/** Готовое аудио в ответ (Lyria; GPT Audio — речь/озвучка, не генерация музыки). Не путать с текстовыми моделями. */
-function modelProducesChatAudio(m) {
-  if (!m || typeof m !== "object") return false;
-  const s = String(m.slug || "").toLowerCase();
-  if (s.includes("lyria")) return true;
-  if (s.includes("gpt-audio") && m.supportsSpeech === true) return true;
-  return m.supportsSpeech === true && m.supportsMusicGeneration === true;
-}
-
-/** Во вкладке «Музыка» выбрана модель без выхода звука — только лирика/промпты. */
-function isTextOnlyMusicAssistModel(m) {
-  if (!m || typeof m !== "object") return false;
-  return m.supportsMusicGeneration === true && !modelProducesChatAudio(m);
-}
-
 const MODEL_GROUPS = [
   { id: "free", emoji: "🎁", title: "Бесплатные" },
   { id: "favorite", emoji: "⭐", title: "Избранное" },
@@ -482,7 +465,6 @@ const MODEL_GROUPS = [
   { id: "video", emoji: "🎬", title: "Видео" },
   { id: "transcription", emoji: "📝", title: "Транскрипция" },
   { id: "speech", emoji: "🎙️", title: "Голос" },
-  { id: "music", emoji: "🎵", title: "Музыка" },
 ];
 
 function modelPickerFilterHaystack(m, favSet) {
@@ -810,7 +792,9 @@ async function main() {
       )
     : [];
   const sttModels = models.filter((x) => x.supportsTranscription === true);
-  const chatModels = models.filter((m) => m.supportsChat !== false);
+  const chatModels = models.filter(
+    (m) => m.supportsChat !== false && m.supportsMusicGeneration !== true,
+  );
 
   if (!isGuest) {
     setModelFavoritesServerSync(true);
@@ -1318,7 +1302,6 @@ async function main() {
         video: [],
         transcription: [],
         speech: [],
-        music: [],
       };
       for (const m of chatModels) {
         if (favSet.has(m.slug)) buckets.favorite.push(m);
@@ -1521,24 +1504,7 @@ async function main() {
         emptyHint.textContent = "Нет моделей по запросу.";
         panel.appendChild(emptyHint);
 
-        if (g.id === "music") {
-          const audioMs = list.filter((m) => modelProducesChatAudio(m));
-          const textOnlyMs = list.filter((m) => !modelProducesChatAudio(m));
-          const row = document.createElement("div");
-          row.className = "model-scroll-row";
-          row.setAttribute("role", "group");
-          row.setAttribute(
-            "aria-label",
-            "Музыка: сначала генерация аудио, затем текстовые модели",
-          );
-          for (const m of audioMs) {
-            row.appendChild(buildModelButton(m));
-          }
-          for (const m of textOnlyMs) {
-            row.appendChild(buildModelButton(m));
-          }
-          panel.appendChild(row);
-        } else if (g.id === "favorite") {
+        if (g.id === "favorite") {
           const row = document.createElement("div");
           row.className = "model-scroll-row";
           row.setAttribute("role", "group");
@@ -1749,7 +1715,6 @@ async function main() {
   }
 
   const sttModeHintEl = document.getElementById("stt-mode-hint");
-  const musicTextHintEl = document.getElementById("music-text-hint");
   const videoModeHintEl = document.getElementById("video-mode-hint");
   function updateHints() {
     const m = selectedModel();
@@ -1757,10 +1722,6 @@ async function main() {
     const vid = m.supportsVideoGeneration === true;
     if (sttModeHintEl) {
       sttModeHintEl.style.display = !vid && isSttOnlyModel(m) ? "block" : "none";
-    }
-    if (musicTextHintEl) {
-      musicTextHintEl.style.display =
-        !vid && isTextOnlyMusicAssistModel(m) ? "block" : "none";
     }
     if (videoModeHintEl) {
       videoModeHintEl.style.display = vid ? "block" : "none";
