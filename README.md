@@ -77,6 +77,9 @@
 ```bash
 python -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8000
 ```
+При локальном запуске запустить ngrok
+ngrok http 8000
+
 
 Откройте в браузере:
 
@@ -229,7 +232,18 @@ curl -sS -X POST "https://YOUR_DOMAIN/v1/chat/completions" \
 
 ```bash
 python scripts/sync_openrouter_prices.py
+# со сверкой каталога (удаление мёртвых / free→paid), затем цены:
+python scripts/sync_openrouter_prices.py --reconcile
 ```
+
+Сверка каталога с OpenRouter (проверка free-маршрутов, правка `default_model_specs.json` + БД):
+
+```bash
+python scripts/sync_openrouter_catalog.py --check
+python scripts/sync_openrouter_catalog.py
+```
+
+В админке: **Проверить каталог** / **Исправить каталог**. Ночью в **02:00** (`Europe/Moscow`, см. `CATALOG_SYNC_*` в `.env`) сверка запускается автоматически.
 
 Иконки брендов в чате: локальные PNG в `server/static/icons/brand/` — обновить или добавить файл после изменения домена в карте префиксов в `server/static/js/chat.js`:
 

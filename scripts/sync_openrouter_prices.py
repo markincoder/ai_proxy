@@ -4,11 +4,14 @@ CLI: синхронизация цен чат-моделей с OpenRouter (ка
 Из корня репозитория:
   python scripts/sync_openrouter_prices.py           # запись в БД
   python scripts/sync_openrouter_prices.py --dry-run  # только печать
-
   python scripts/sync_openrouter_prices.py --no-copy # только цены, без текстов карточек из JSON
+  python scripts/sync_openrouter_prices.py --reconcile  # сначала сверка каталога (удаление/free→paid), затем цены
 
 Эффективные курс и коэффициент — через resolve_usd_rub_markup()
 (БД site_pricing_factors после админского пересчёта или .env).
+
+Полная сверка каталога (без обязательного пересчёта через этот скрипт):
+  python scripts/sync_openrouter_catalog.py
 """
 
 from __future__ import annotations
@@ -42,12 +45,41 @@ def main() -> None:
         action="store_true",
         help="Не обновлять тексты карточек из default_model_specs.json.",
     )
+    ap.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Перед ценами: сверка каталога с OpenRouter (удаление мёртвых, free→paid).",
+    )
+    ap.add_argument(
+        "--no-probe-free",
+        action="store_true",
+        help="С --reconcile: не слать мини-запросы к free-моделям.",
+    )
     args = ap.parse_args()
 
     _load_repo_env()
     from server.database import SessionLocal, apply_user_facing_from_specs
     from server.openrouter_price_sync import apply_rows_to_session, build_apply_rows, fetch_models_map
     from server.pricing_factors import resolve_usd_rub_markup
+
+    if args.reconcile:
+        from server.openrouter_catalog_sync import reconcile_catalog_with_openrouter
+
+        with SessionLocal() as db:
+            rec = reconcile_catalog_with_openrouter(
+                db,
+                dry_run=args.dry_run,
+                probe_free=not args.no_probe_free,
+                sync_prices=False,
+            )
+            if not args.dry_run:
+                db.commit()
+        print(
+            f"[reconcile] removed={rec.get('removedSlugs')} converted={rec.get('convertedFreeToPaid')} "
+            f"specs {rec.get('chatSpecsBefore')}→{rec.get('chatSpecsAfter')}"
+        )
+        if args.dry_run:
+            print("[reconcile] dry-run — цены ниже посчитаны по текущему каталогу без записи правок slug.")
 
     usd_rub, mult = resolve_usd_rub_markup()
 

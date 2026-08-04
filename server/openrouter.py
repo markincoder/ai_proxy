@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import base64
 import logging
 from typing import Any, AsyncIterator
@@ -10,13 +11,26 @@ from .openai_audio_input import reencode_audio_bytes_to_wav
 
 _LOG = logging.getLogger(__name__)
 
+_TRANSIENT_CONNECT_ATTEMPTS = 3
+
 
 def openrouter_base_url() -> str:
     return get_settings().openrouter_api_base_url.rstrip("/")
 
 
-def _client_timeout(*, connect: float = 30.0, total: float = 300.0) -> httpx.Timeout:
+def _client_timeout(*, connect: float = 20.0, total: float = 300.0) -> httpx.Timeout:
+    # connect отдельно: при кратких обрывах к OpenRouter быстрее переходим к retry.
     return httpx.Timeout(total, connect=connect)
+
+
+def is_transient_openrouter_transport_error(exc: BaseException) -> bool:
+    """Connect/DNS/timeout — имеет смысл повторить запрос с нуля."""
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)):
+        return True
+    if isinstance(exc, httpx.RemoteProtocolError):
+        return True
+    name = type(exc).__name__
+    return name in {"ConnectError", "ConnectTimeout", "ReadTimeout", "PoolTimeout"}
 
 
 @asynccontextmanager
@@ -51,12 +65,32 @@ async def chat_completions(
     *,
     timeout: httpx.Timeout | None = None,
 ) -> httpx.Response:
-    async with openrouter_async_client(timeout=timeout) as client:
-        return await client.post(
-            f"{openrouter_base_url()}/chat/completions",
-            headers=openrouter_headers(True),
-            json=body,
-        )
+    last: BaseException | None = None
+    for attempt in range(_TRANSIENT_CONNECT_ATTEMPTS):
+        try:
+            async with openrouter_async_client(timeout=timeout) as client:
+                return await client.post(
+                    f"{openrouter_base_url()}/chat/completions",
+                    headers=openrouter_headers(True),
+                    json=body,
+                )
+        except httpx.RequestError as exc:
+            last = exc
+            if attempt + 1 >= _TRANSIENT_CONNECT_ATTEMPTS or not is_transient_openrouter_transport_error(
+                exc
+            ):
+                raise
+            delay = 0.35 * (attempt + 1)
+            _LOG.warning(
+                "OpenRouter chat/completions transport retry %s/%s after %s: %s",
+                attempt + 1,
+                _TRANSIENT_CONNECT_ATTEMPTS,
+                type(exc).__name__,
+                exc,
+            )
+            await asyncio.sleep(delay)
+    assert last is not None
+    raise last
 
 
 async def embeddings_create(body: dict[str, Any]) -> httpx.Response:

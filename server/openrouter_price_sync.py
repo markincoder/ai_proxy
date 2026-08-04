@@ -34,7 +34,6 @@ VIDEO_USD_PER_SEC: dict[str, Decimal] = {
     "minimax/hailuo-2.3": Decimal("0.0817"),
     "openai/sora-2-pro": Decimal("0.50"),
     "alibaba/wan-2.7": Decimal("0.10"),
-    "alibaba/wan-2.6": Decimal("0.15"),
     "bytedance/seedance-2.0": Decimal("0.055"),
     "bytedance/seedance-2.0-fast": Decimal("0.040"),
     "bytedance/seedance-1-5-pro": Decimal("0.025"),
@@ -91,9 +90,16 @@ def _usd_in_out_from_modalities(pr: dict[str, Any]) -> tuple[Decimal | None, Dec
 
 
 def fetch_models_map() -> dict[str, dict]:
-    base = get_settings().openrouter_api_base_url.rstrip("/")
+    from .openrouter import openrouter_base_url, openrouter_headers_get
+
+    base = openrouter_base_url()
     trust = get_settings().openrouter_httpx_trust_env
-    r = httpx.get(f"{base}/models", timeout=120.0, trust_env=trust)
+    r = httpx.get(
+        f"{base}/models",
+        headers=openrouter_headers_get(),
+        timeout=120.0,
+        trust_env=trust,
+    )
     r.raise_for_status()
     return {m["id"]: m for m in r.json().get("data", [])}
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Админка — II Proxy</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=88" />
+    <link rel="stylesheet" href="/static/css/style.css?v=91" />
     <style>
       .admin-shell {
         max-width: 72rem;
@@ -262,12 +262,25 @@
         border: 0;
       }
     </style>
-  </head>
+  <!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=109248503', 'ym');
+
+    ym(109248503, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/109248503" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+</head>
   <body class="page-tariffs">
     <div id="site-banner-slot" aria-live="polite"></div>
     <script src="/static/js/site-banner.js?v=2" defer></script>
     <div id="site-header-root"></div>
-    <script src="/static/js/site-header.js?v=11" defer></script>
+    <script src="/static/js/site-header.js?v=13" defer></script>
 
     <main class="main-shell admin-shell">
       <div id="admin-content" style="display: none">
@@ -309,6 +322,7 @@
               <div class="admin-pricing-factor-actions">
                 <button type="button" class="btn btn-primary" id="btn-pricing-factors-apply">Применить</button>
                 <button type="button" class="btn" id="btn-catalog-openrouter-check">Проверить каталог</button>
+                <button type="button" class="btn" id="btn-catalog-openrouter-reconcile">Исправить каталог</button>
               </div>
             </div>
             <p id="pricing-factors-err" class="err" style="display: none; margin-top: 0.5rem"></p>
@@ -703,7 +717,8 @@
         <p id="catalog-check-summary" class="page-lead" style="font-size: 0.88rem; margin: 0 0 0.85rem"></p>
         <pre class="admin-thread-pre" id="catalog-check-body" style="max-height: 14rem; overflow: auto; margin: 0 0 1rem; white-space: pre-wrap"></pre>
         <div class="admin-actions" style="flex-wrap: wrap; gap: 0.5rem">
-          <button type="button" class="btn btn-primary" id="catalog-check-run-apply">Пересчитать тарифы</button>
+          <button type="button" class="btn btn-primary" id="catalog-check-run-reconcile">Исправить каталог</button>
+          <button type="button" class="btn" id="catalog-check-run-apply">Только пересчитать тарифы</button>
           <button type="button" class="btn" id="catalog-check-cancel">Позже</button>
         </div>
       </div>
@@ -1306,14 +1321,95 @@
       const catalogCheckDialog = document.getElementById("catalog-check-dialog");
       let catalogCheckLastAligned = false;
 
+      function formatCatalogCheckReport(data) {
+        const cmChat =
+          data.chatCatalog?.slugsMissingOnPublicModelsEndpoint ||
+          data.chatCatalog?.slugsMissingOnOpenRouter ||
+          [];
+        const toRemove = data.chatCatalog?.slugsToRemove || [];
+        const toConvert = data.chatCatalog?.slugsToConvertFreeToPaid || [];
+        const cmEmb =
+          data.embeddingsCatalog?.slugsMissingOnPublicModelsEndpoint ||
+          data.embeddingsCatalog?.slugsMissingOnOpenRouter ||
+          [];
+        const embNote = data.embeddingsCatalog?.noteRu || "";
+        let blob = "";
+        blob += `Всего id в ответе OpenRouter GET …/models: ${data.openRouterSlugCount}\n`;
+        blob += `Проверка free-маршрутов (мини-запрос): ${data.probeFree ? "да" : "нет"}\n\n`;
+        blob += `Чат (${data.chatCatalog?.slugsCompared ?? "?"} slug)\n`;
+        blob += `  Удалить (${toRemove.length}):\n`;
+        blob += toRemove.length ? toRemove.map((x) => "    - " + x).join("\n") + "\n" : "    (нет)\n";
+        blob += `  Free → paid (${toConvert.length}):\n`;
+        blob += toConvert.length
+          ? toConvert.map((x) => `    - ${x.from} → ${x.to} (${x.reason || ""})`).join("\n") + "\n"
+          : "    (нет)\n";
+        blob += `  Нет среди id списка (${cmChat.length}):\n`;
+        blob += cmChat.length ? cmChat.map((x) => "    - " + x).join("\n") + "\n" : "    (нет)\n";
+        blob += `\nЭмбеддинги (${data.embeddingsCatalog?.slugsCompared ?? "?"} slug): нет среди этих id (${cmEmb.length})\n`;
+        blob +=
+          "(это само по себе не значит, что моделей нет на OpenRouter для Embeddings API).\n";
+        blob += cmEmb.length ? cmEmb.map((x) => "  - " + x).join("\n") + "\n" : "  (нет)\n";
+        if (embNote.trim()) blob += `\n---\n${embNote.trim()}\n`;
+        return blob;
+      }
+
+      async function runCatalogReconcile({ confirmFirst }) {
+        if (confirmFirst) {
+          const ok = confirm(
+            "Сверить каталог с OpenRouter: удалить недоступные модели, заменить отключённые free на paid (если есть), обновить JSON/БД и пересчитать цены?",
+          );
+          if (!ok) return { ok: false };
+        }
+        const msgEl = document.getElementById("pricing-factors-msg");
+        const errEl = document.getElementById("pricing-factors-err");
+        if (errEl) {
+          errEl.style.display = "none";
+          errEl.textContent = "";
+        }
+        if (msgEl) msgEl.textContent = "Исправление каталога…";
+        try {
+          const r = await api("/api/admin/catalog/openrouter-reconcile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dryRun: false, probeFree: true, syncPrices: true }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            const t =
+              typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data);
+            if (errEl) {
+              errEl.style.display = "block";
+              errEl.textContent = t || "Не удалось исправить каталог";
+            }
+            if (msgEl) msgEl.textContent = "";
+            return { ok: false };
+          }
+          const removed = (data.removedSlugs || []).length;
+          const converted = (data.convertedFreeToPaid || []).length;
+          const priced = data.pricing?.pricingRowsUpdatedFromOpenRouter ?? "—";
+          if (msgEl) {
+            msgEl.textContent = `Каталог обновлён: удалено ${removed}, free→paid ${converted}, цен обновлено ${priced}.`;
+          }
+          await loadModels();
+          return { ok: true, data };
+        } catch (e) {
+          if (errEl) {
+            errEl.style.display = "block";
+            errEl.textContent = "Ошибка: " + (e?.message || String(e));
+          }
+          if (msgEl) msgEl.textContent = "";
+          return { ok: false };
+        }
+      }
+
       document.getElementById("btn-catalog-openrouter-check").addEventListener("click", async () => {
         const sum = document.getElementById("catalog-check-summary");
         const bodyEl = document.getElementById("catalog-check-body");
-        sum.textContent = "Проверка…";
+        sum.textContent = "Проверка (включая free-маршруты)…";
         bodyEl.textContent = "";
         catalogCheckDialog.showModal();
         try {
-          const r = await api("/api/admin/catalog/openrouter-check");
+          const r = await api("/api/admin/catalog/openrouter-check?probe_free=true");
           if (!r.ok) {
             let t = "Не удалось проверить";
             try {
@@ -1328,43 +1424,36 @@
           }
           const data = await r.json();
           catalogCheckLastAligned = !!data.catalogLooksAligned;
-          const cmChat =
-            data.chatCatalog?.slugsMissingOnPublicModelsEndpoint ||
-            data.chatCatalog?.slugsMissingOnOpenRouter ||
-            [];
-          const cmEmb =
-            data.embeddingsCatalog?.slugsMissingOnPublicModelsEndpoint ||
-            data.embeddingsCatalog?.slugsMissingOnOpenRouter ||
-            [];
-          const embNote = data.embeddingsCatalog?.noteRu || "";
           sum.textContent = data.catalogLooksAligned
-            ? "Чат-каталог совпадает с id из GET …/models OpenRouter. По эмбеддингам см. пояснение в тексте ниже."
-            : "Не все slug чат-каталога есть среди id из GET …/models — перепроверьте список ниже. Эмбеддинги там часто не перечислены.";
-          let blob = "";
-          blob += `Всего id в ответе OpenRouter GET …/models: ${data.openRouterSlugCount}\n\n`;
-          blob += `Чат (${data.chatCatalog?.slugsCompared ?? "?"} slug): нет среди этих id (${cmChat.length})\n`;
-          blob += cmChat.length ? cmChat.map((x) => "  - " + x).join("\n") + "\n" : "  (нет)\n";
-          blob += `\nЭмбеддинги (${data.embeddingsCatalog?.slugsCompared ?? "?"} slug): нет среди этих id (${cmEmb.length})\n`;
-          blob +=
-            "(это само по себе не значит, что моделей нет на OpenRouter для Embeddings API).\n";
-          blob += cmEmb.length ? cmEmb.map((x) => "  - " + x).join("\n") + "\n" : "  (нет)\n";
-          if (embNote.trim()) blob += `\n---\n${embNote.trim()}\n`;
-          bodyEl.textContent = blob;
+            ? "Чат-каталог согласован с OpenRouter. Можно пересчитать тарифы."
+            : "Есть расхождения (удаление / free→paid). Нажмите «Исправить каталог».";
+          bodyEl.textContent = formatCatalogCheckReport(data);
         } catch (e) {
           sum.textContent = "Ошибка: " + (e?.message || String(e));
           catalogCheckLastAligned = false;
         }
       });
 
+      document.getElementById("btn-catalog-openrouter-reconcile")?.addEventListener("click", () => {
+        void runCatalogReconcile({ confirmFirst: true });
+      });
+
       document.getElementById("catalog-check-cancel").addEventListener("click", () => {
         catalogCheckDialog.close();
+      });
+
+      document.getElementById("catalog-check-run-reconcile")?.addEventListener("click", async () => {
+        const result = await runCatalogReconcile({ confirmFirst: true });
+        if (result.ok) catalogCheckDialog.close();
       });
 
       document.getElementById("catalog-check-run-apply").addEventListener("click", async () => {
         let msg =
           "Запросить актуальные USD-цены у OpenRouter и пересчитать каталог в ₽ с указанным курсом и коэффициентом? Сохранённые ставки в базе для чат-моделей из JSON будут заменены.";
         if (!catalogCheckLastAligned) {
-          msg = "Каталог не полностью совпал с OpenRouter (см. список). " + msg;
+          msg =
+            "Каталог не полностью совпал с OpenRouter (см. список). Лучше сначала «Исправить каталог». " +
+            msg;
         }
         if (!confirm(msg)) return;
         const result = await postPricingFactorsApply();
@@ -1779,6 +1868,6 @@
         await loadBanner();
       })();
     </script>
-    <script src="/static/js/app-nav.js?v=10" defer></script>
+    <script src="/static/js/app-nav.js?v=11" defer></script>
   </body>
 </html>

@@ -10,7 +10,7 @@ export const FAVORITES_LS_KEY = "ai_proxy_favorite_slugs_v1";
 export const DEFAULT_FAVORITE_SLUGS = [
   "openai/gpt-4o",
   "google/gemini-2.5-flash",
-  "anthropic/claude-sonnet-4",
+  "anthropic/claude-sonnet-4.6",
   "openai/gpt-5.5",
   "deepseek/deepseek-chat-v3.1",
 ];

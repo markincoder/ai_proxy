@@ -104,17 +104,19 @@
   }
 
   async function refreshCaptcha() {
-    const q = $("support-captcha-question");
-    if (!q) return;
-    q.textContent = "Загрузка…";
+    const img = $("support-captcha-image");
+    if (!img) return;
+    img.removeAttribute("src");
+    img.alt = "Загрузка…";
     try {
       const r = await api("/api/support/captcha");
       if (!r.ok) throw new Error("captcha");
       const j = await r.json();
       state.captchaToken = j.token;
-      q.textContent = j.question;
+      img.src = j.imageDataUrl || "";
+      img.alt = "Символы для проверки";
     } catch {
-      q.textContent = "Ошибка";
+      img.alt = "Не удалось загрузить капчу";
     }
   }
 
@@ -259,6 +261,7 @@
       const subject = $("support-subject").value.trim();
       const message = $("support-message").value.trim();
       const captchaAnswer = $("support-captcha-answer").value.trim();
+      const website = ($("support-website")?.value || "").trim();
       if (!subject || !message || !captchaAnswer || !state.captchaToken) {
         showMsg("Заполните тему, сообщение и капчу.", true);
         return;
@@ -268,6 +271,7 @@
         message,
         captchaToken: state.captchaToken,
         captchaAnswer,
+        website,
       };
       try {
         const r = await api("/api/support/tickets", {
@@ -277,7 +281,9 @@
         });
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
-          const msg = formatApiError(j.detail) || "Не удалось отправить обращение.";
+          const msg =
+            (typeof j.detail === "string" ? j.detail : formatApiError(j.detail)) ||
+            (r.status === 429 ? "Слишком много обращений. Попробуйте позже." : "Не удалось отправить обращение.");
           showMsg(msg, true);
           await refreshCaptcha();
           return;

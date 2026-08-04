@@ -1,12 +1,5 @@
 import { consumeStream } from "./sse.js?v=27";
 import { persistIdentityLinksFromMe } from "./identity-links.js?v=4";
-import {
-  getFavoriteSetForCatalog,
-  hydrateModelFavoritesFromServer,
-  setModelFavoritesServerSync,
-  syncFavoriteStarButton,
-  toggleFavoriteSlug,
-} from "./model-favorites.js?v=2";
 
 const MODEL_STORAGE_KEY = "ai_proxy_model_slug";
 /** Выставляется на /tariffs при выборе модели — чат не подменяет её моделью из старого диалога. */
@@ -15,7 +8,6 @@ const STT_STORAGE_KEY = "ai_proxy_stt_slug";
 /** Гость: диалог в sessionStorage — не пропадает при переходе на «Тарифы» и обратно. */
 const GUEST_CHAT_SESSION_KEY = "ai_proxy_guest_chat_v1";
 const GUEST_CHAT_SESSION_MAX_BYTES = 450000;
-const STREAM_MD_FLUSH_MS = 100;
 const TTS_VOICE_STORAGE_KEY = "ai_proxy_tts_voice";
 const ALLOWED_TTS_VOICE_IDS = [
   "alloy",
@@ -389,154 +381,6 @@ function modelProducesSpokenChatAudio(m) {
   return m.supportsSpeech === true && s.includes("gpt-audio");
 }
 
-/** Все вкладки, куда имеет смысл вывести модель (может быть несколько). */
-function modelGroupIds(m) {
-  if (!m || typeof m !== "object") return ["text"];
-  const out = [];
-  const seen = new Set();
-
-  /** @param {string} id */
-  function push(id) {
-    if (seen.has(id)) return;
-    seen.add(id);
-    out.push(id);
-  }
-
-  if (m.isFree === true) push("free");
-  if (m.supportsVideoGeneration === true) push("video");
-  if (m.supportsImageGeneration === true) push("image");
-  if (modelProducesSpokenChatAudio(m)) push("speech");
-  if (m.supportsTranscription === true) push("transcription");
-
-  /** Обычный текстовый чат: не STT-only и не только генерация музыки в БД (legacy). */
-  const textOk =
-    m.supportsChat !== false &&
-    !isSttOnlyModel(m) &&
-    m.supportsMusicGeneration !== true;
-  if (textOk) push("text");
-
-  if (
-    out.length === 0 &&
-    (m.supportsMusicGeneration !== true || modelProducesSpokenChatAudio(m))
-  ) {
-    push("text");
-  }
-  return out;
-}
-
-/** Вкладка по умолчанию при выборе модели — прежний приоритет. */
-function primaryModelGroupId(m, favSet) {
-  const ids = modelGroupIds(m);
-  const slug = String(m?.slug || "");
-  const order = [
-    "free",
-    "favorite",
-    "video",
-    "image",
-    "speech",
-    "transcription",
-    "text",
-  ];
-  for (const id of order) {
-    if (id === "favorite") {
-      if (favSet && typeof favSet.has === "function" && slug && favSet.has(slug)) {
-        return "favorite";
-      }
-      continue;
-    }
-    if (ids.includes(id)) return id;
-  }
-  return "text";
-}
-
-/** @deprecated Совместимость: одна «главная» вкладка. */
-function modelGroupId(m) {
-  return primaryModelGroupId(m, undefined);
-}
-
-const MODEL_GROUPS = [
-  { id: "free", emoji: "🎁", title: "Бесплатные" },
-  { id: "favorite", emoji: "⭐", title: "Избранное" },
-  { id: "text", emoji: "💬", title: "Текст и чат" },
-  { id: "image", emoji: "🖼", title: "Изображения" },
-  { id: "video", emoji: "🎬", title: "Видео" },
-  { id: "transcription", emoji: "📝", title: "Транскрипция" },
-  { id: "speech", emoji: "🎙️", title: "Голос" },
-];
-
-function modelPickerFilterHaystack(m, favSet) {
-  const slug = String(m.slug || "");
-  const slugWords = slug.replace(/[/\-_:]/g, " ");
-  const desc =
-    typeof m.descriptionRu === "string" && m.descriptionRu.trim()
-      ? m.descriptionRu.trim()
-      : `${m.provider}. Детали и цены — в разделе «Все модели».`;
-  const tabTitles = MODEL_GROUPS.filter((g) => modelGroupIds(m).includes(g.id))
-    .map((g) => g.title)
-    .join(" ");
-  const priceLine = modelCardPricingLine(m);
-  const favHint =
-    favSet && typeof favSet.has === "function" && favSet.has(slug) ? "избранное" : "";
-  return [m.displayName, slug, slugWords, m.provider, desc, tabTitles, priceLine, favHint]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
-function hueFromSlug(slug) {
-  let h = 0;
-  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
-  return h % 360;
-}
-
-/**
- * Локальные PNG из /static/icons/brand/ (см. scripts/download_brand_icons.py);
- * если файла ещё нет — браузер грузит тот же favicon через Google CDN (на лету).
- */
-const MODEL_SLUG_FIRST_SEGMENT_TO_BRAND_HOST = Object.freeze({
-  openrouter: "openrouter.ai",
-  openai: "openai.com",
-  anthropic: "anthropic.com",
-  google: "google.com",
-  "meta-llama": "meta.com",
-  mistralai: "mistral.ai",
-  deepseek: "deepseek.com",
-  qwen: "alibaba.com",
-  bytedance: "bytedance.com",
-  nvidia: "nvidia.com",
-  poolside: "poolside.ai",
-  minimax: "minimax.chat",
-  kwaivgi: "kuaishou.com",
-  alibaba: "alibaba.com",
-  "x-ai": "x.ai",
-  moonshotai: "moonshot.cn",
-  perplexity: "perplexity.ai",
-  xiaomi: "xiaomi.com",
-  baai: "baai.ac.cn",
-});
-
-const BRAND_ICON_STATIC_BASE = "/static/icons/brand";
-
-function brandHostForSlug(slug) {
-  if (!slug || typeof slug !== "string") return null;
-  const seg = slug.split("/")[0].toLowerCase();
-  return MODEL_SLUG_FIRST_SEGMENT_TO_BRAND_HOST[seg] ?? null;
-}
-
-function brandIconFileBase(domain) {
-  return domain.replace(/\./g, "-");
-}
-
-function brandIconLocalUrl(host) {
-  if (!host) return null;
-  return `${BRAND_ICON_STATIC_BASE}/${brandIconFileBase(host)}.png`;
-}
-
-function brandIconRemoteUrl(host) {
-  if (!host) return null;
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-}
-
 /** Сеть/провайдер; без внутренних деталей */
 const MSG_CHAT_NO_UPSTREAM =
   "Сейчас нет связи с провайдером модели. Повторите запрос позже. Если ошибка повторяется, напишите в поддержку — раздел «Контакты».";
@@ -584,6 +428,16 @@ function humanizeOpenRouterStreamError(detail, opts = {}) {
     return (
       "Google отклоняет запрос: для вашего региона (или IP) доступ к этому API запрещён (часть моделей Google через OpenRouter). " +
       "Это ограничение провайдера Google, не II Proxy. Попробуйте сеть в поддерживаемом регионе или другую модель (например GPT Audio — озвучка текста). " +
+      MSG_CHAT_PROVIDER_CONTACTS
+    );
+  }
+
+  if (
+    low.includes("unavailable for free") ||
+    (low.includes("paid version is available") && low.includes("slug instead"))
+  ) {
+    return (
+      "Бесплатный маршрут этой модели у провайдера отключён. Выберите другую бесплатную модель или платную на странице «Модели и тарифы». " +
       MSG_CHAT_PROVIDER_CONTACTS
     );
   }
@@ -794,13 +648,6 @@ async function main() {
       m.supportsChat !== false &&
       !(m.supportsMusicGeneration === true && !modelProducesSpokenChatAudio(m)),
   );
-
-  if (!isGuest) {
-    setModelFavoritesServerSync(true);
-    await hydrateModelFavoritesFromServer(chatModels.map((x) => x.slug));
-  } else {
-    setModelFavoritesServerSync(false);
-  }
 
   const balanceEl = document.getElementById("balance");
   const balanceWrapEl = document.getElementById("balance-wrap");
@@ -1159,11 +1006,11 @@ async function main() {
   }
 
   let selectedSlug = defaultChatModelSlugOrFallback();
-  /** У аккаунта в БД уже есть last_chat_model_slug — можно подстроить селектор под открытый диалог. */
+  /** У аккаунта в БД уже есть last_chat_model_slug. */
   let hadServerLastModel = false;
   /** true: не открывать последний чат при старте — уважать ?model= или выбор с тарифов. */
   let honorExplicitModelChoice = false;
-  /* Сначала ?model= (переход с /tariffs), иначе последний выбор из сессии. */
+  /* Сначала ?model= (переход с /tariffs), иначе lastModelSlug аккаунта, иначе бесплатная. */
   try {
     const qp = new URLSearchParams(window.location.search);
     const qModel = qp.get("model");
@@ -1179,7 +1026,7 @@ async function main() {
     } else {
       let remembered = false;
 
-      /** На сервере уже сохранён выбор аккаунта — он важнее локальной сессии. */
+      /** Сохранённый выбор аккаунта важнее локальной сессии. */
       hadServerLastModel =
         !isGuest &&
         typeof me.lastModelSlug === "string" &&
@@ -1192,7 +1039,7 @@ async function main() {
         remembered = true;
       }
 
-      /** После входа без lastModelSlug — первая бесплатная из каталога, не гостевой slug из sessionStorage. */
+      /** Гость: помнить локальный выбор. Аккаунт без lastModelSlug — сразу бесплатная. */
       if (!remembered && isGuest) {
         const savedSlug = sessionStorage.getItem(MODEL_STORAGE_KEY);
         if (savedSlug && chatModels.some((x) => x.slug === savedSlug)) {
@@ -1222,62 +1069,43 @@ async function main() {
     /* ignore */
   }
 
-  /** Переключение вкладки категории (после построения селектора). */
-  let activateModelTab = () => {};
-
   function selectModelVisual(slug) {
     if (!modelPickerEl) return;
-    modelPickerEl.querySelectorAll(".model-card").forEach((btn) => {
-      const on = btn.dataset.modelId === slug;
-      btn.classList.toggle("model-card--selected", on);
-      btn.setAttribute("aria-checked", on ? "true" : "false");
-    });
-    const sel = chatModels.find((x) => x.slug === slug);
-    if (sel) {
-      const activeTab = modelPickerEl.querySelector(".model-tab.model-tab--active");
-      const currentGid = activeTab?.dataset?.group ?? "";
-      const favSetNow = getFavoriteSetForCatalog(chatModels.map((x) => x.slug));
-      const keepTab =
-        Boolean(currentGid) &&
-        (modelGroupIds(sel).includes(currentGid) ||
-          (currentGid === "favorite" && favSetNow.has(sel.slug)));
-      if (!keepTab) activateModelTab(primaryModelGroupId(sel, favSetNow));
+    if (!chatModels.length) {
+      modelPickerEl.innerHTML =
+        '<p class="model-picker-empty">Нет доступных моделей.</p>';
+      return;
     }
-
-    /** Видимая панель, иначе первая копия модели среди вкладок. */
-    let picked = null;
-    if (slug) {
-      for (const c of modelPickerEl.querySelectorAll(".model-card")) {
-        if (c.dataset.modelId !== slug) continue;
-        const panel = c.closest(".model-tab-panel");
-        if (panel && !panel.hidden) {
-          picked = c;
-          break;
-        }
-      }
-      if (!picked) {
-        for (const c of modelPickerEl.querySelectorAll(".model-card")) {
-          if (c.dataset.modelId === slug) {
-            picked = c;
-            break;
-          }
-        }
-      }
-    }
-
-    if (picked) {
-      requestAnimationFrame(() => {
-        try {
-          picked.scrollIntoView({
-            behavior: "smooth",
-            inline: "center",
-            block: "nearest",
-          });
-        } catch {
-          picked.scrollIntoView();
-        }
-      });
-    }
+    const m =
+      chatModels.find((x) => x.slug === slug) ||
+      chatModels.find((x) => x.slug === selectedSlug) ||
+      chatModels[0];
+    const name = (m && m.displayName) || slug || "—";
+    const provider = (m && m.provider) || "";
+    const priceLine = m ? modelCardPricingLine(m) : "";
+    const freeBadge =
+      m && m.isFree === true
+        ? '<span class="model-card-free-badge">Free</span>'
+        : "";
+    const metaParts = [];
+    if (provider) metaParts.push(escapeHtml(provider));
+    if (priceLine) metaParts.push(escapeHtml(priceLine));
+    modelPickerEl.innerHTML =
+      '<div class="current-model-bar">' +
+      '<div class="current-model-bar__info">' +
+      '<span class="current-model-bar__label">Текущая модель</span>' +
+      '<div class="current-model-bar__title">' +
+      '<span class="current-model-bar__name">' +
+      escapeHtml(name) +
+      "</span>" +
+      freeBadge +
+      "</div>" +
+      (metaParts.length
+        ? '<span class="current-model-bar__meta">' + metaParts.join(" · ") + "</span>"
+        : "") +
+      "</div>" +
+      '<a class="btn btn-primary current-model-bar__choose" href="/tariffs">Выбрать модель</a>' +
+      "</div>";
   }
 
   function setSelectedSlug(slug) {
@@ -1287,430 +1115,6 @@ async function main() {
     selectModelVisual(slug);
     updateHints();
     schedulePersistLastModel(slug);
-  }
-
-  if (modelPickerEl) {
-    function mountChatModelPicker(preserve) {
-      const catalogSlugs = chatModels.map((x) => x.slug);
-      const favSet = getFavoriteSetForCatalog(catalogSlugs);
-      const buckets = {
-        free: [],
-        favorite: [],
-        text: [],
-        image: [],
-        video: [],
-        transcription: [],
-        speech: [],
-      };
-      for (const m of chatModels) {
-        if (favSet.has(m.slug)) buckets.favorite.push(m);
-        for (const gid of modelGroupIds(m)) {
-          if (Object.prototype.hasOwnProperty.call(buckets, gid)) {
-            buckets[gid].push(m);
-          }
-        }
-      }
-    for (const k of Object.keys(buckets)) {
-      buckets[k].sort((a, b) =>
-        String(a.displayName).localeCompare(String(b.displayName), "ru"),
-      );
-    }
-
-    const groupsWithModels = MODEL_GROUPS.filter((g) => buckets[g.id].length > 0);
-    if (!groupsWithModels.length) {
-      modelPickerEl.innerHTML =
-        '<p class="model-picker-empty">Нет доступных моделей.</p>';
-      return;
-    }
-      const tabBar = document.createElement("div");
-      tabBar.className = "model-tabs";
-      tabBar.setAttribute("role", "tablist");
-      tabBar.setAttribute("aria-label", "Категории моделей");
-
-      const panelWrap = document.createElement("div");
-      panelWrap.className = "model-tab-panels";
-
-      const initialGid = (() => {
-        const pt = preserve && preserve.preserveTab ? String(preserve.preserveTab) : "";
-        if (pt && groupsWithModels.some((x) => x.id === pt)) return pt;
-        const sm = chatModels.find((x) => x.slug === selectedSlug);
-        if (sm) return primaryModelGroupId(sm, favSet);
-        return groupsWithModels[0].id;
-      })();
-
-      function buildModelButton(m) {
-        const letter = (m.displayName || "?").trim().charAt(0).toUpperCase();
-        const hue = hueFromSlug(m.slug);
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "model-card";
-        btn.dataset.modelId = m.slug;
-        btn.setAttribute("role", "radio");
-        btn.setAttribute("aria-checked", "false");
-        const desc =
-          typeof m.descriptionRu === "string" && m.descriptionRu.trim()
-            ? m.descriptionRu.trim()
-            : `${m.provider}. Детали и цены — в разделе «Все модели».`;
-        const priceOneLiner = modelCardPricingLine(m);
-        const isFav = favSet.has(m.slug);
-        btn.setAttribute(
-          "title",
-          `${m.displayName} — ${m.provider} (${m.slug})` +
-            (priceOneLiner ? ` · ${priceOneLiner}` : ""),
-        );
-
-        const starBtn = document.createElement("span");
-        starBtn.setAttribute("role", "button");
-        starBtn.tabIndex = 0;
-        starBtn.className = "model-favorite-star";
-        starBtn.dataset.modelId = m.slug;
-        const starIc = document.createElement("span");
-        starIc.className = "model-favorite-star__icon";
-        starIc.setAttribute("aria-hidden", "true");
-        starIc.textContent = isFav ? "★" : "☆";
-        starBtn.appendChild(starIc);
-        syncFavoriteStarButton(starBtn, isFav);
-        function onStarActivate(ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          toggleFavoriteSlug(m.slug, catalogSlugs);
-          let ps = "";
-          let pt = "";
-          try {
-            const si = modelPickerEl.querySelector(".model-picker-search");
-            ps = si && typeof si.value === "string" ? si.value : "";
-            pt =
-              modelPickerEl.querySelector(".model-tab.model-tab--active")?.dataset
-                ?.group ?? "";
-          } catch {
-            /* ignore */
-          }
-          mountChatModelPicker({ preserveSearch: ps, preserveTab: pt });
-        }
-        starBtn.addEventListener("click", onStarActivate);
-        starBtn.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter" || ev.key === " ") onStarActivate(ev);
-        });
-
-        const iconWrap = document.createElement("span");
-        iconWrap.className = "model-card-icon";
-        const iconHost = brandHostForSlug(m.slug);
-        const iconUrl = iconHost ? brandIconLocalUrl(iconHost) : null;
-        if (iconUrl && iconHost) {
-          const img = document.createElement("img");
-          img.src = iconUrl;
-          img.alt = "";
-          img.width = 32;
-          img.height = 32;
-          img.loading = "lazy";
-          img.decoding = "async";
-          img.className = "model-card-icon-img";
-          img.addEventListener("error", () => {
-            if (!img.dataset.remoteTried && iconHost) {
-              img.dataset.remoteTried = "1";
-              img.src = brandIconRemoteUrl(iconHost);
-              return;
-            }
-            img.remove();
-            const fallback = document.createElement("span");
-            fallback.className = "model-card-avatar model-card-avatar--sm";
-            fallback.style.setProperty("--hue", String(hue));
-            fallback.textContent = letter;
-            iconWrap.appendChild(fallback);
-          });
-          iconWrap.appendChild(img);
-        } else {
-          const av = document.createElement("span");
-          av.className = "model-card-avatar model-card-avatar--sm";
-          av.style.setProperty("--hue", String(hue));
-          av.textContent = letter;
-          iconWrap.appendChild(av);
-        }
-
-        const body = document.createElement("span");
-        body.className = "model-card-body";
-
-        const titleRow = document.createElement("span");
-        titleRow.className = "model-card-title-row";
-        const provEl = document.createElement("span");
-        provEl.className = "model-card-title-provider";
-        provEl.textContent = m.provider;
-        titleRow.appendChild(provEl);
-        const sepEl = document.createElement("span");
-        sepEl.className = "model-card-title-sep";
-        sepEl.setAttribute("aria-hidden", "true");
-        sepEl.textContent = " · ";
-        titleRow.appendChild(sepEl);
-        const nameEl = document.createElement("span");
-        nameEl.className = "model-card-title-name";
-        nameEl.textContent = m.displayName;
-        titleRow.appendChild(nameEl);
-        if (m.isFree === true) {
-          const fb = document.createElement("span");
-          fb.className = "model-card-free-badge";
-          fb.textContent = "Free";
-          titleRow.appendChild(fb);
-        }
-
-        const pr = document.createElement("span");
-        pr.className = "model-card-price";
-        pr.textContent = priceOneLiner;
-
-        const dc = document.createElement("span");
-        dc.className = "model-card-desc";
-        dc.textContent = desc;
-
-        body.appendChild(titleRow);
-        body.appendChild(pr);
-        body.appendChild(dc);
-        btn.appendChild(starBtn);
-        btn.appendChild(iconWrap);
-        btn.appendChild(body);
-        btn.dataset.filterText = modelPickerFilterHaystack(m, favSet);
-        return btn;
-      }
-
-      groupsWithModels.forEach((g) => {
-        const list = buckets[g.id];
-        const tabId = `model-tab-${g.id}`;
-        const panelId = `model-panel-${g.id}`;
-        const isInitial = g.id === initialGid;
-
-        const tab = document.createElement("button");
-        tab.type = "button";
-        tab.className = "model-tab" + (isInitial ? " model-tab--active" : "");
-        tab.id = tabId;
-        tab.setAttribute("role", "tab");
-        tab.setAttribute("aria-selected", isInitial ? "true" : "false");
-        tab.setAttribute("aria-controls", panelId);
-        tab.setAttribute("tabindex", isInitial ? "0" : "-1");
-        tab.dataset.group = g.id;
-        tab.innerHTML =
-          `<span class="model-tab-icon-wrap model-tab-icon-wrap--emoji" aria-hidden="true">${g.emoji}</span>` +
-          `<span class="model-tab-label">${escapeHtml(g.title)}</span>`;
-
-        const panel = document.createElement("div");
-        panel.className = "model-tab-panel";
-        panel.id = panelId;
-        panel.setAttribute("role", "tabpanel");
-        panel.setAttribute("aria-labelledby", tabId);
-        panel.hidden = !isInitial;
-        panel.dataset.group = g.id;
-
-        const emptyHint = document.createElement("p");
-        emptyHint.className = "model-picker-panel-empty";
-        emptyHint.hidden = true;
-        emptyHint.textContent = "Нет моделей по запросу.";
-        panel.appendChild(emptyHint);
-
-        if (g.id === "favorite") {
-          const row = document.createElement("div");
-          row.className = "model-scroll-row";
-          row.setAttribute("role", "group");
-          row.setAttribute("aria-label", "Избранные модели");
-          for (const m of list) {
-            row.appendChild(buildModelButton(m));
-          }
-          panel.appendChild(row);
-        } else if (g.id === "speech") {
-          const row = document.createElement("div");
-          row.className = "model-scroll-row";
-          row.setAttribute("role", "group");
-          row.setAttribute("aria-label", "Голос: ответ со звуком");
-          for (const m of list) {
-            row.appendChild(buildModelButton(m));
-          }
-          panel.appendChild(row);
-        } else {
-          const row = document.createElement("div");
-          row.className = "model-scroll-row";
-          row.setAttribute("role", "group");
-          row.setAttribute("aria-label", g.title);
-
-          for (const m of list) {
-            row.appendChild(buildModelButton(m));
-          }
-          panel.appendChild(row);
-        }
-        tabBar.appendChild(tab);
-        panelWrap.appendChild(panel);
-      });
-
-      modelPickerEl.innerHTML = "";
-
-      const searchToolbar = document.createElement("div");
-      searchToolbar.className = "model-picker-toolbar";
-
-      let searchBusy = false;
-      const searchInput = document.createElement("input");
-      searchInput.type = "search";
-      searchInput.className = "model-picker-search";
-      searchInput.placeholder = "Поиск по названию, провайдеру или разделам…";
-      searchInput.setAttribute("aria-label", "Поиск моделей по каталогу чата");
-      searchInput.autocomplete = "off";
-      searchInput.spellcheck = false;
-
-      /** @returns {HTMLElement | null} */
-      function pickerPanelForGroup(gid) {
-        return panelWrap.querySelector(`.model-tab-panel[data-group="${gid}"]`);
-      }
-
-      function applyModelPickerSearch() {
-        if (searchBusy) return;
-        searchBusy = true;
-        try {
-          const raw = searchInput.value.trim().toLowerCase();
-          const tokens = raw.split(/\s+/).filter(Boolean);
-          const hasFilter = tokens.length > 0;
-
-          modelPickerEl.querySelectorAll(".model-card").forEach((card) => {
-            const hay = card.dataset.filterText || "";
-            const ok = !hasFilter || tokens.every((t) => hay.includes(t));
-            card.classList.toggle("model-card--filter-hidden", !ok);
-          });
-
-          let totalMatches = 0;
-          groupsWithModels.forEach((grp) => {
-            const panel = pickerPanelForGroup(grp.id);
-            if (!panel) return;
-            const n = panel.querySelectorAll(
-              ".model-card:not(.model-card--filter-hidden)",
-            ).length;
-            totalMatches += n;
-            const hint = panel.querySelector(":scope > .model-picker-panel-empty");
-            if (hint) hint.hidden = !(hasFilter && n === 0);
-          });
-
-          tabBar.querySelectorAll(".model-tab").forEach((tab) => {
-            const gid = tab.dataset.group;
-            if (!gid) return;
-            const panel = pickerPanelForGroup(gid);
-            if (!panel) return;
-            const n = panel.querySelectorAll(
-              ".model-card:not(.model-card--filter-hidden)",
-            ).length;
-            const hideTab = hasFilter && totalMatches > 0 && n === 0;
-            tab.classList.toggle("model-tab--filter-hidden", hideTab);
-          });
-
-          const activeTab = tabBar.querySelector(".model-tab--active");
-          if (
-            hasFilter &&
-            totalMatches > 0 &&
-            activeTab?.classList.contains("model-tab--filter-hidden")
-          ) {
-            const firstStay = tabBar.querySelector(".model-tab:not(.model-tab--filter-hidden)");
-            const fg = firstStay?.dataset.group;
-            if (fg) activateModelTab(fg);
-          }
-        } finally {
-          searchBusy = false;
-        }
-      }
-
-      searchInput.addEventListener("input", () => applyModelPickerSearch());
-      searchInput.addEventListener("search", () => applyModelPickerSearch());
-
-      searchToolbar.appendChild(searchInput);
-
-      const searchMobileMq = window.matchMedia("(max-width: 900px)");
-      const searchMobileHost =
-        typeof document !== "undefined"
-          ? document.getElementById("model-picker-search-mobile-host")
-          : null;
-
-      function syncPickerSearchDock() {
-        const mq = searchMobileMq;
-        const row = document.querySelector(".page-chat-title-row");
-        if (!searchMobileHost || !row) {
-          modelPickerEl.insertBefore(searchToolbar, modelPickerEl.firstChild);
-          return;
-        }
-
-        /** @see style.css — max-width: 900px (.chat-sidebar-toggle) */
-        const mobile = mq.matches;
-        searchInput.placeholder = mobile
-          ? "Поиск моделей…"
-          : "Поиск по названию, провайдеру или разделам…";
-        if (mobile) {
-          searchMobileHost.appendChild(searchToolbar);
-          searchToolbar.classList.add("model-picker-toolbar--title-row");
-          row.classList.add("page-chat-title-row--search-mobile");
-          searchMobileHost.setAttribute("aria-hidden", "false");
-        } else {
-          row.classList.remove("page-chat-title-row--search-mobile");
-          searchMobileHost.setAttribute("aria-hidden", "true");
-          modelPickerEl.insertBefore(searchToolbar, modelPickerEl.firstChild);
-          searchToolbar.classList.remove("model-picker-toolbar--title-row");
-        }
-      }
-
-      const mqListen =
-        typeof searchMobileMq.addEventListener === "function"
-          ? (fn) => searchMobileMq.addEventListener("change", fn)
-          : (fn) => searchMobileMq.addListener(fn);
-      mqListen(() => syncPickerSearchDock());
-
-      syncPickerSearchDock();
-      modelPickerEl.appendChild(tabBar);
-      modelPickerEl.appendChild(panelWrap);
-
-      activateModelTab = (gid) => {
-        tabBar.querySelectorAll(".model-tab").forEach((t) => {
-          const on = t.dataset.group === gid;
-          t.classList.toggle("model-tab--active", on);
-          t.setAttribute("aria-selected", on ? "true" : "false");
-          t.setAttribute("tabindex", on ? "0" : "-1");
-        });
-        panelWrap.querySelectorAll(".model-tab-panel").forEach((p) => {
-          p.hidden = p.dataset.group !== gid;
-        });
-      };
-
-      tabBar.addEventListener("click", (e) => {
-        const t = e.target.closest(".model-tab");
-        if (!t || !tabBar.contains(t)) return;
-        const gid = t.dataset.group;
-        if (gid) activateModelTab(gid);
-      });
-
-      tabBar.addEventListener("keydown", (e) => {
-        const tabs = [
-          ...tabBar.querySelectorAll(".model-tab:not(.model-tab--filter-hidden)"),
-        ];
-        const ix = tabs.indexOf(document.activeElement);
-        if (ix < 0) return;
-        let next = ix;
-        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-          next = (ix + 1) % tabs.length;
-          e.preventDefault();
-        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-          next = (ix - 1 + tabs.length) % tabs.length;
-          e.preventDefault();
-        } else {
-          return;
-        }
-        tabs[next].focus();
-        const gid = tabs[next].dataset.group;
-        if (gid) activateModelTab(gid);
-      });
-
-      modelPickerEl.addEventListener("click", (e) => {
-        const btn = e.target.closest(".model-card");
-        if (!btn || !modelPickerEl.contains(btn)) return;
-        if (e.target.closest(".model-favorite-star")) return;
-        const slug = btn.dataset.modelId;
-        if (slug) void selectModelPick(slug);
-      });
-
-      if (preserve && preserve.preserveSearch != null && searchInput) {
-        searchInput.value = preserve.preserveSearch;
-        applyModelPickerSearch();
-      }
-      selectModelVisual(selectedSlug);
-    }
-
-    mountChatModelPicker();
   }
 
   const sttModeHintEl = document.getElementById("stt-mode-hint");
@@ -1744,7 +1148,7 @@ async function main() {
       at.title = allowAtt
         ? "Прикрепить изображение или аудио"
         : m?.isFree === true
-          ? "Вложения только на платных моделях (не вкладка «Бесплатные»)"
+          ? "Вложения только на платных моделях"
           : "Вложения недоступны в режиме видео";
     }
     if (videoPanelEl && formEl) {
@@ -2489,28 +1893,11 @@ async function main() {
       await refreshSidebarList();
       return;
     }
-    await openThread(list[0].id, { applyThreadModel: hadServerLastModel });
+    /** Последний диалог открываем, но модель не трогаем: lastModelSlug или бесплатная по умолчанию. */
+    await openThread(list[0].id, { applyThreadModel: false });
   }
 
   await initConversations();
-
-  async function selectModelPick(slug) {
-    if (!chatModels.some((x) => x.slug === slug)) return;
-    if (slug === selectedSlug) return;
-    if (videoGenInProgress) return;
-    await abandonOrPersistCurrent();
-    selectedSlug = slug;
-    sessionStorage.setItem(MODEL_STORAGE_KEY, slug);
-    currentConversationId = null;
-    chatHistory.length = 0;
-    listEl.innerHTML = "";
-    errEl.style.display = "none";
-    errEl.textContent = "";
-    selectModelVisual(slug);
-    updateHints();
-    schedulePersistLastModel(slug);
-    await refreshSidebarList();
-  }
 
   function setComposerDisabled(flag) {
     if (inputEl) inputEl.disabled = flag;
@@ -2717,22 +2104,9 @@ async function main() {
       return html;
     }
 
-    let streamMdFlushTimer = null;
     function flushStreamMdNow() {
-      if (streamMdFlushTimer != null) {
-        window.clearTimeout(streamMdFlushTimer);
-        streamMdFlushTimer = null;
-      }
       md.innerHTML = renderAssistantHtml();
       listEl.scrollTop = listEl.scrollHeight;
-    }
-    function scheduleStreamMdFlush() {
-      if (streamMdFlushTimer != null) return;
-      streamMdFlushTimer = window.setTimeout(() => {
-        streamMdFlushTimer = null;
-        md.innerHTML = renderAssistantHtml();
-        listEl.scrollTop = listEl.scrollHeight;
-      }, STREAM_MD_FLUSH_MS);
     }
 
     if (res.status === 401) {
@@ -2796,8 +2170,6 @@ async function main() {
       res.body.getReader(),
       (delta) => {
         acc += delta;
-        typing.remove();
-        scheduleStreamMdFlush();
       },
       (rub) => {
         const n = Number(rub);
@@ -2837,8 +2209,6 @@ async function main() {
           const u = item?.image_url?.url;
           if (typeof u === "string" && u && !imageUrls.includes(u)) imageUrls.push(u);
         }
-        typing.remove();
-        scheduleStreamMdFlush();
       },
       undefined,
       (aud) => {
@@ -2847,14 +2217,13 @@ async function main() {
         }
         if (aud && typeof aud === "object" && aud.data) {
           audioParts.push(aud.data);
-          typing.remove();
         } else if (typeof aud === "string" && aud) {
           audioParts.push(aud);
-          typing.remove();
         }
       },
     );
 
+    typing.remove();
     flushStreamMdNow();
 
     if (audioOut && audioParts.length > 0) {
@@ -2899,7 +2268,6 @@ async function main() {
     const asst = { role: "assistant", content: acc };
     if (imageUrls.length) asst.imageUrls = imageUrls;
     chatHistory.push(asst);
-    typing.remove();
 
     const me2 = await api("/api/auth/me").then((r) => r.json());
     if (!me2.guest && me2.balance != null) refreshBalance(me2.balance);

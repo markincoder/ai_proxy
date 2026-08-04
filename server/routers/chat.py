@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import json
 from decimal import Decimal
 from typing import Any, Annotated, AsyncIterator
@@ -23,6 +24,7 @@ from ..models import AiModel
 from ..openrouter import (
     chat_completions,
     is_matroska_non_webm_ebml,
+    is_transient_openrouter_transport_error,
     openrouter_async_client,
     openrouter_base_url,
     openrouter_headers,
@@ -745,44 +747,57 @@ async def _handle_chat_json(
 
         async def stream_anthropic() -> AsyncIterator[bytes]:
             acc: dict[str, Any] = {}
-            try:
-                async with openrouter_async_client() as client:
-                    async with client.stream(
-                        "POST",
-                        f"{openrouter_base_url()}/chat/completions",
-                        headers=openrouter_headers(True),
-                        json=payload,
-                    ) as resp:
-                        if resp.status_code >= 400:
-                            err = await resp.aread()
-                            raw_e = err.decode("utf-8", errors="replace")
-                            if is_openrouter_balance_or_credit_wall(
-                                raw_e, resp.status_code
+            last_exc: BaseException | None = None
+            for attempt in range(3):
+                acc = {}
+                try:
+                    async with openrouter_async_client() as client:
+                        async with client.stream(
+                            "POST",
+                            f"{openrouter_base_url()}/chat/completions",
+                            headers=openrouter_headers(True),
+                            json=payload,
+                        ) as resp:
+                            if resp.status_code >= 400:
+                                err = await resp.aread()
+                                raw_e = err.decode("utf-8", errors="replace")
+                                if is_openrouter_balance_or_credit_wall(
+                                    raw_e, resp.status_code
+                                ):
+                                    notify_openrouter_balance_wall_maybe(
+                                        raw_e,
+                                        "Чат: stream (Anthropic wire → OpenRouter)",
+                                    )
+                                    sanitized = SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
+                                    err_b = (
+                                        f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": sanitized}}, ensure_ascii=False)}\n\n'
+                                    ).encode("utf-8")
+                                else:
+                                    text = raw_e[:2000]
+                                    err_b = (
+                                        f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": text}}, ensure_ascii=False)}\n\n'
+                                    ).encode("utf-8")
+                                yield err_b
+                                yield b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+                                return
+                            async for out_b in iter_openai_sse_to_anthropic_sse(
+                                resp.aiter_bytes(),
+                                model=amodel,
+                                acc=acc,
                             ):
-                                notify_openrouter_balance_wall_maybe(
-                                    raw_e,
-                                    "Чат: stream (Anthropic wire → OpenRouter)",
-                                )
-                                sanitized = SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
-                                err_b = (
-                                    f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": sanitized}}, ensure_ascii=False)}\n\n'
-                                ).encode("utf-8")
-                            else:
-                                text = raw_e[:2000]
-                                err_b = (
-                                    f'event: error\ndata: {json.dumps({"type": "error", "error": {"type": "api_error", "message": text}}, ensure_ascii=False)}\n\n'
-                                ).encode("utf-8")
-                            yield err_b
-                            yield b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
-                            return
-                        async for out_b in iter_openai_sse_to_anthropic_sse(
-                            resp.aiter_bytes(),
-                            model=amodel,
-                            acc=acc,
-                        ):
-                            yield out_b
-            except httpx.RequestError as exc:
-                log_upstream_request_failure("chat.stream.anthropic", exc)
+                                yield out_b
+                    last_exc = None
+                    break
+                except httpx.RequestError as exc:
+                    last_exc = exc
+                    if attempt < 2 and is_transient_openrouter_transport_error(exc):
+                        await asyncio.sleep(0.4 * (attempt + 1))
+                        continue
+                    log_upstream_request_failure("chat.stream.anthropic", exc)
+                    yield _sse_upstream_error(_MSG_NO_UPSTREAM)
+                    return
+            if last_exc is not None:
+                log_upstream_request_failure("chat.stream.anthropic", last_exc)
                 yield _sse_upstream_error(_MSG_NO_UPSTREAM)
                 return
 
@@ -818,38 +833,52 @@ async def _handle_chat_json(
     async def stream_with_billing() -> AsyncIterator[bytes]:
         line_carry = ""
         state: dict[str, Any] = {}
-        try:
-            async with openrouter_async_client() as client:
-                async with client.stream(
-                    "POST",
-                    f"{openrouter_base_url()}/chat/completions",
-                    headers=openrouter_headers(True),
-                    json=payload,
-                ) as resp:
-                    if resp.status_code >= 400:
-                        err = await resp.aread()
-                        text = err.decode("utf-8", errors="replace")
-                        if is_openrouter_balance_or_credit_wall(text, resp.status_code):
-                            notify_openrouter_balance_wall_maybe(
-                                text, "Чат: SSE stream (chat/completions)"
-                            )
-                            yield _sse_upstream_error(
-                                SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
-                            )
-                        else:
-                            yield f"data: {text}\n\n".encode()
-                        return
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
-                        line_carry += chunk.decode("utf-8", errors="replace")
-                        parts = line_carry.split("\n")
-                        line_carry = parts.pop() if parts else ""
-                        for line in parts:
-                            state = merge_usage_line(line, state)
-                    if line_carry.strip():
-                        state = merge_usage_line(line_carry, state)
-        except httpx.RequestError as exc:
-            log_upstream_request_failure("chat.stream", exc)
+        last_exc: BaseException | None = None
+        for attempt in range(3):
+            line_carry = ""
+            state = {}
+            try:
+                async with openrouter_async_client() as client:
+                    async with client.stream(
+                        "POST",
+                        f"{openrouter_base_url()}/chat/completions",
+                        headers=openrouter_headers(True),
+                        json=payload,
+                    ) as resp:
+                        if resp.status_code >= 400:
+                            err = await resp.aread()
+                            text = err.decode("utf-8", errors="replace")
+                            if is_openrouter_balance_or_credit_wall(text, resp.status_code):
+                                notify_openrouter_balance_wall_maybe(
+                                    text, "Чат: SSE stream (chat/completions)"
+                                )
+                                yield _sse_upstream_error(
+                                    SANITIZED_PROVIDER_CONNECTION_MESSAGE_RU
+                                )
+                            else:
+                                yield f"data: {text}\n\n".encode()
+                            return
+                        async for chunk in resp.aiter_bytes():
+                            yield chunk
+                            line_carry += chunk.decode("utf-8", errors="replace")
+                            parts = line_carry.split("\n")
+                            line_carry = parts.pop() if parts else ""
+                            for line in parts:
+                                state = merge_usage_line(line, state)
+                        if line_carry.strip():
+                            state = merge_usage_line(line_carry, state)
+                last_exc = None
+                break
+            except httpx.RequestError as exc:
+                last_exc = exc
+                if attempt < 2 and is_transient_openrouter_transport_error(exc):
+                    await asyncio.sleep(0.4 * (attempt + 1))
+                    continue
+                log_upstream_request_failure("chat.stream", exc)
+                yield _sse_upstream_error(_MSG_NO_UPSTREAM)
+                return
+        if last_exc is not None:
+            log_upstream_request_failure("chat.stream", last_exc)
             yield _sse_upstream_error(_MSG_NO_UPSTREAM)
             return
 

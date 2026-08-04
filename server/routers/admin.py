@@ -334,20 +334,66 @@ def admin_apply_pricing_factors(
 
 
 @router.get("/catalog/openrouter-check")
-def admin_catalog_openrouter_check(_: str = Depends(require_admin)):
+def admin_catalog_openrouter_check(
+    probe_free: bool = True,
+    _: str = Depends(require_admin),
+):
     """
-    Сводка: локальный чат-каталог и эмбеддинги против списка ``id`` в GET …/models OpenRouter.
+    Сводка: локальный чат-каталог (включая free) и эмбеддинги против OpenRouter.
 
-    Флаг catalogLooksAligned учитывает только чат: именно по этим id синхронизируются цены из полей pricing в JSON.
-    Модели только для эмбеддингов там часто отсутствуют; пояснение см. в embeddingsCatalog.noteRu ответа.
-    Исключения: опциональный OPENROUTER_FREE_ROUTER_SLUG, локальные ориентиры видео/STT.
+    Для free дополнительно делается мини-запрос (ловим «unavailable for free»).
     """
     try:
-        from ..openrouter_catalog_check import check_catalog_vs_openrouter
+        from ..openrouter_catalog_sync import check_catalog_vs_openrouter
 
-        return check_catalog_vs_openrouter()
+        return check_catalog_vs_openrouter(probe_free=probe_free)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Не удалось запросить каталог OpenRouter: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+class AdminCatalogReconcileBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    dry_run: bool = Field(False, alias="dryRun")
+    probe_free: bool = Field(True, alias="probeFree")
+    sync_prices: bool = Field(True, alias="syncPrices")
+
+
+@router.post("/catalog/openrouter-reconcile")
+def admin_catalog_openrouter_reconcile(
+    body: AdminCatalogReconcileBody | None = None,
+    _: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Принудительно исправить каталог по OpenRouter: удалить мёртвые модели,
+    free→paid при наличии платного slug, обновить JSON + БД и пересчитать цены.
+    """
+    opts = body or AdminCatalogReconcileBody()
+    try:
+        from ..openrouter_catalog_sync import reconcile_catalog_with_openrouter
+
+        result = reconcile_catalog_with_openrouter(
+            db,
+            dry_run=opts.dry_run,
+            probe_free=opts.probe_free,
+            sync_prices=opts.sync_prices,
+        )
+        if not opts.dry_run:
+            db.commit()
+            invalidate_public_models_cache()
+        return result
+    except httpx.HTTPError as e:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"Не удалось запросить каталог OpenRouter: {e}") from e
+    except RuntimeError as e:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except OSError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Не удалось записать каталог JSON: {e}") from e
 
 
 class AdminUserPatch(BaseModel):
@@ -686,36 +732,48 @@ def admin_message_matches(
             status_code=400,
             detail="Задайте FORBIDDEN_MESSAGE_KEYWORDS в .env и/или параметр keywords",
         )
-    rows = (
-        db.query(ChatThread)
+    # Сначала только id: ORDER BY вместе с большой колонкой messages даёт MySQL 1038
+    # (Out of sort memory), т.к. сервер сортирует полные строки с JSON.
+    id_rows = (
+        db.query(ChatThread.id)
         .order_by(ChatThread.updated_at.desc())
         .limit(limit_threads)
         .all()
     )
+    ids = [r[0] for r in id_rows]
     matches: list[dict[str, Any]] = []
-    for t in rows:
-        blob = _thread_plaintext(t.messages)
-        if not blob.strip():
-            continue
-        lower = blob.lower()
-        hit_kw: Optional[str] = None
-        for kw in kws:
-            if kw in lower:
-                hit_kw = kw
-                break
-        if not hit_kw:
-            continue
-        matches.append(
-            {
-                "threadId": t.id,
-                "userId": t.user_id,
-                "title": t.title,
-                "matchedKeyword": hit_kw,
-                "snippet": _snippet_at(blob, hit_kw),
-                "modelSlug": t.model_slug,
-                "updatedAt": (t.updated_at.isoformat() + "Z") if t.updated_at else None,
-            }
-        )
+    if not ids:
+        return {"keywordsUsed": kws, "matchCount": 0, "matches": matches}
+
+    order_index = {tid: i for i, tid in enumerate(ids)}
+    batch_size = 100
+    for offset in range(0, len(ids), batch_size):
+        chunk = ids[offset : offset + batch_size]
+        rows = db.query(ChatThread).filter(ChatThread.id.in_(chunk)).all()
+        rows.sort(key=lambda t: order_index.get(t.id, 0))
+        for t in rows:
+            blob = _thread_plaintext(t.messages)
+            if not blob.strip():
+                continue
+            lower = blob.lower()
+            hit_kw: Optional[str] = None
+            for kw in kws:
+                if kw in lower:
+                    hit_kw = kw
+                    break
+            if not hit_kw:
+                continue
+            matches.append(
+                {
+                    "threadId": t.id,
+                    "userId": t.user_id,
+                    "title": t.title,
+                    "matchedKeyword": hit_kw,
+                    "snippet": _snippet_at(blob, hit_kw),
+                    "modelSlug": t.model_slug,
+                    "updatedAt": (t.updated_at.isoformat() + "Z") if t.updated_at else None,
+                }
+            )
     return {"keywordsUsed": kws, "matchCount": len(matches), "matches": matches}
 
 

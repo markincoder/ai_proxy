@@ -81,6 +81,9 @@ def _fire_and_forget(fn: Callable[[], None]) -> None:
 
 
 def schedule_new_user_notification(user_id: str, public_label: str, source_ru: str, balance: str) -> None:
+    if not get_settings().notify_new_users:
+        return
+
     def run() -> None:
         subject = f"[II Proxy] Новый пользователь: {public_label}"
         body = (

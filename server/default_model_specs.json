@@ -15,25 +15,9 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "poolside/laguna-xs.2:free",
-    "display_name": "Poolside Laguna XS.2 (free)",
-    "provider": "Poolside",
-    "description_ru": "Лёгкая Laguna для кода на бесплатном маршруте — альтернатива тяжёлым кодовым моделям в том же режиме, когда они недоступны.",
-    "pricing_note_ru": "0 ₽. Очередь и лимиты на стороне провайдера.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
-    "fixed_price": null,
-    "is_free": true,
-    "supports_vision": false,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-oss-20b:free",
@@ -51,43 +35,49 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
-    "slug": "openai/gpt-oss-120b:free",
-    "display_name": "GPT-OSS 120B (free)",
+    "slug": "openai/gpt-oss-120b",
+    "display_name": "GPT-OSS 120B",
     "provider": "OpenAI",
-    "description_ru": "Крупная открытая модель семейства GPT-OSS на бесплатном маршруте.",
-    "pricing_note_ru": "0 ₽. Очередь и лимиты на стороне провайдера.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
+    "description_ru": "Крупная открытая MoE-модель семейства GPT-OSS (платный маршрут OpenRouter). Бесплатный :free у провайдера отключён.",
+    "pricing_note_ru": "Цены ориентировочные; уточняются синхронизацией с OpenRouter.",
+    "input_price_per_mn": "3",
+    "output_price_per_mn": "17",
     "fixed_price": null,
-    "is_free": true,
     "supports_vision": true,
     "supports_image_generation": false,
     "supports_music_generation": false,
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
-    "slug": "minimax/minimax-m2.5:free",
-    "display_name": "MiniMax M2.5 (free)",
+    "slug": "minimax/minimax-m2.5",
+    "display_name": "MiniMax M2.5",
     "provider": "MiniMax",
     "description_ru": "Агентская модель MiniMax M2.5 на бесплатном канале (когда доступна провайдером).",
-    "pricing_note_ru": "0 ₽. Лимиты и очередь на стороне провайдера.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
+    "pricing_note_ru": "Цены по OpenRouter; уточняются синхронизацией.",
+    "input_price_per_mn": "22.50",
+    "output_price_per_mn": "135.00",
     "fixed_price": null,
-    "is_free": true,
+    "is_free": false,
     "supports_vision": false,
     "supports_image_generation": false,
     "supports_music_generation": false,
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "nvidia/nemotron-3-super-120b-a12b:free",
@@ -105,25 +95,9 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "poolside/laguna-m.1:free",
-    "display_name": "Poolside Laguna M.1 (free)",
-    "provider": "Poolside",
-    "description_ru": "Специализированная модель для кода и инженерных сценариев на бесплатном маршруте.",
-    "pricing_note_ru": "0 ₽. Очередь и лимиты на стороне провайдера.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
-    "fixed_price": null,
-    "is_free": true,
-    "supports_vision": false,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.4",
@@ -139,7 +113,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-4o",
@@ -155,7 +132,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-4o-mini",
@@ -171,23 +151,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "anthropic/claude-sonnet-4",
-    "display_name": "Claude Sonnet 4",
-    "provider": "Anthropic",
-    "description_ru": "Базовая Sonnet 4 поколение: задачи средней сложности, код и рабочая переписка.",
-    "input_price_per_mn": "900",
-    "output_price_per_mn": "4500",
-    "fixed_price": null,
-    "supports_vision": true,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "anthropic/claude-sonnet-4.6",
@@ -203,7 +170,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/gemini-2.5-flash",
@@ -219,7 +189,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/gemini-2.5-pro",
@@ -235,7 +208,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/gemini-2.5-flash-image",
@@ -252,7 +228,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5-image-mini",
@@ -269,7 +248,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5-image",
@@ -286,7 +268,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.4-image-2",
@@ -303,7 +288,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "kwaivgi/kling-v3.0-pro",
@@ -320,7 +308,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "kwaivgi/kling-v3.0-std",
@@ -337,7 +328,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/veo-3.1-fast",
@@ -354,7 +348,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "minimax/hailuo-2.3",
@@ -371,7 +368,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "alibaba/wan-2.7",
@@ -388,7 +388,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "kwaivgi/kling-video-o1",
@@ -405,7 +408,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/veo-3.1-lite",
@@ -422,7 +428,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/veo-3.1",
@@ -439,24 +448,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
-  },
-  {
-    "slug": "alibaba/wan-2.6",
-    "display_name": "Wan 2.6",
-    "provider": "Alibaba",
-    "description_ru": "Обновление Wan перед 2.7: референс и текст → видео с расширенным контролем сцены.",
-    "pricing_note_ru": "Оплата за длительность готового ролика; итог — по фактическому списанию после генерации.",
-    "input_price_per_mn": "0",
-    "output_price_per_mn": "0",
-    "fixed_price": null,
-    "supports_vision": false,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": true,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/sora-2-pro",
@@ -473,7 +468,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "bytedance/seedance-2.0",
@@ -490,7 +488,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "bytedance/seedance-2.0-fast",
@@ -507,7 +508,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "bytedance/seedance-1-5-pro",
@@ -524,7 +528,10 @@
     "supports_video_generation": true,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "deepseek/deepseek-v3.2",
@@ -540,7 +547,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "qwen/qwen3.6-plus",
@@ -556,7 +566,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "qwen/qwen3-coder-next",
@@ -572,7 +585,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "mistralai/mistral-large-2512",
@@ -588,7 +604,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "anthropic/claude-opus-4.7",
@@ -604,7 +623,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "anthropic/claude-opus-4.6",
@@ -620,23 +642,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "anthropic/claude-sonnet-4.5",
-    "display_name": "Claude Sonnet 4.5",
-    "provider": "Anthropic",
-    "description_ru": "Улучшенный Sonnet: быстрее Opus, сильнее в коде и длинных задачах, чем 4 серия.",
-    "input_price_per_mn": "900",
-    "output_price_per_mn": "4500",
-    "fixed_price": null,
-    "supports_vision": true,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.5",
@@ -652,7 +661,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.5-pro",
@@ -668,7 +680,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.4-pro",
@@ -684,7 +699,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5.4-mini",
@@ -700,7 +718,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5-mini",
@@ -716,7 +737,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "deepseek/deepseek-r1-0528",
@@ -732,39 +756,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "x-ai/grok-4",
-    "display_name": "Grok 4",
-    "provider": "xAI",
-    "description_ru": "Флагман xAI с доступом к свежей информации (по возможностям провайдера) и файлам.",
-    "input_price_per_mn": "600",
-    "output_price_per_mn": "3000",
-    "fixed_price": null,
-    "supports_vision": true,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "x-ai/grok-4-fast",
-    "display_name": "Grok 4 Fast",
-    "provider": "xAI",
-    "description_ru": "Ускоренный Grok 4 для интерактивных приложений без лишней задержки.",
-    "input_price_per_mn": "375",
-    "output_price_per_mn": "2250",
-    "fixed_price": null,
-    "supports_vision": true,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "moonshotai/kimi-k2.6",
@@ -780,7 +775,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "mistralai/mistral-medium-3-5",
@@ -796,7 +794,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "perplexity/sonar-pro",
@@ -813,7 +814,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-audio",
@@ -830,7 +834,10 @@
     "supports_video_generation": false,
     "supports_speech": true,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-audio-mini",
@@ -847,7 +854,10 @@
     "supports_video_generation": false,
     "supports_speech": true,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "mistralai/mistral-small-3.2-24b-instruct",
@@ -864,24 +874,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
-  },
-  {
-    "slug": "anthropic/claude-3.5-haiku",
-    "display_name": "Claude 3.5 Haiku",
-    "provider": "Anthropic",
-    "description_ru": "Быстрый и экономичный Claude 3.5 для повседневных текстовых задач.",
-    "pricing_note_ru": "Оплата по токенам chat completions по тарифу провайдера.",
-    "input_price_per_mn": "240",
-    "output_price_per_mn": "1200",
-    "fixed_price": null,
-    "supports_vision": false,
-    "supports_image_generation": false,
-    "supports_music_generation": false,
-    "supports_video_generation": false,
-    "supports_speech": false,
-    "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "google/gemma-3-27b-it",
@@ -898,7 +894,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-4.1-nano",
@@ -915,7 +914,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "deepseek/deepseek-chat-v3.1",
@@ -932,7 +934,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "mistralai/ministral-8b-2512",
@@ -949,7 +954,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "perplexity/sonar",
@@ -966,7 +974,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-5-nano",
@@ -983,7 +994,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/whisper-1",
@@ -1000,7 +1014,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": true,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-4o-transcribe",
@@ -1017,7 +1034,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": true,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/gpt-4o-mini-transcribe",
@@ -1034,7 +1054,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": true,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/whisper-large-v3",
@@ -1051,7 +1074,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": true,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "openai/whisper-large-v3-turbo",
@@ -1068,7 +1094,10 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": true,
-    "supports_coding": false
+    "supports_coding": false,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   },
   {
     "slug": "minimax/minimax-m2",
@@ -1085,6 +1114,9 @@
     "supports_video_generation": false,
     "supports_speech": false,
     "supports_transcription": false,
-    "supports_coding": true
+    "supports_coding": true,
+    "is_free": false,
+    "supports_embeddings": false,
+    "supports_chat": true
   }
 ]

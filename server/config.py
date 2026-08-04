@@ -52,6 +52,11 @@ class Settings(BaseSettings):
         ge=0,
         validation_alias="MODELS_LIST_CACHE_TTL_SEC",
     )
+    # Ночная сверка каталога с OpenRouter (удаление мёртвых / free→paid / цены), по умолчанию 02:00 Europe/Moscow.
+    catalog_sync_enabled: bool = Field(default=True, validation_alias="CATALOG_SYNC_ENABLED")
+    catalog_sync_hour: int = Field(default=2, ge=0, le=23, validation_alias="CATALOG_SYNC_HOUR")
+    catalog_sync_minute: int = Field(default=0, ge=0, le=59, validation_alias="CATALOG_SYNC_MINUTE")
+    catalog_sync_tz: str = Field(default="Europe/Moscow", validation_alias="CATALOG_SYNC_TZ")
 
     yookassa_env: str = Field(default="false", validation_alias="YOOKASSA_ENABLED")
 
@@ -89,6 +94,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = Field(default="", validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", validation_alias="TELEGRAM_CHAT_ID")
+    notify_new_users_env: str = Field(default="false", validation_alias="NOTIFY_NEW_USERS")
 
     @property
     def yookassa_enabled(self) -> bool:
@@ -127,6 +133,10 @@ class Settings(BaseSettings):
     def mail_starttls(self) -> bool:
         """Для SMTP на порте != 465 (например 587 у Яндекса)."""
         return _env_is_true(self.mail_starttls_env)
+
+    @property
+    def notify_new_users(self) -> bool:
+        return _env_is_true(self.notify_new_users_env)
 
 
 def get_settings() -> Settings:

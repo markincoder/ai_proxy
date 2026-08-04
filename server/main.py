@@ -38,8 +38,26 @@ def _html(path: Path) -> FileResponse:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    import asyncio
+    import logging
+
     init_db()
-    yield
+    sync_task = None
+    try:
+        from .services.catalog_sync_scheduler import catalog_sync_scheduler_loop
+
+        sync_task = asyncio.create_task(catalog_sync_scheduler_loop())
+    except Exception:
+        logging.getLogger(__name__).exception("catalog sync scheduler failed to start")
+    try:
+        yield
+    finally:
+        if sync_task is not None:
+            sync_task.cancel()
+            try:
+                await sync_task
+            except asyncio.CancelledError:
+                pass
 
 
 def create_app() -> FastAPI:

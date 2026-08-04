@@ -1,0 +1,16 @@
+# Indexing only. @-mention and explicit reads still work.
+
+# Large model catalog dumps (noisy in semantic search)
+server/default_model_specs.json
+server/default_embedding_specs.json
+
+# Minified / sourcemaps if added later
+**/*.min.js
+**/*.min.css
+**/*.map
+
+# Build / deps artifacts
+**/node_modules/
+dist/
+build/
+coverage/

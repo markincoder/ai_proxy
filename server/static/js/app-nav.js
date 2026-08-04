@@ -4,36 +4,9 @@
 (function () {
   const api = (path, opts) => fetch(path, { credentials: "include", ...opts });
 
-  /** Совпадает с news.html: после открытия /news сохраняем дату самой свежей записи. */
-  const NEWS_LAST_SEEN_KEY = "ii_proxy_news_last_seen_published_at";
-
-  /**
-   * С главной (/): если есть новость новее, чем пользователь открывал на /news — сначала показать новости.
-   * Обход: `/?skipNews=1` (временно не редиректить).
-   */
+  /** После входа остаёмся в чате; новости открываются из меню. */
   async function maybeRedirectToUnreadNews() {
-    try {
-      if (location.pathname !== "/") return false;
-      const qs = new URLSearchParams(location.search);
-      if (qs.has("skipNews")) return false;
-      const r = await fetch("/api/news", { credentials: "same-origin" });
-      if (!r.ok) return false;
-      const list = await r.json();
-      if (!Array.isArray(list) || !list.length) return false;
-      const latest = list[0].publishedAt;
-      if (!latest) return false;
-      let seen = null;
-      try {
-        seen = localStorage.getItem(NEWS_LAST_SEEN_KEY);
-      } catch {
-        return false;
-      }
-      if (seen && latest <= seen) return false;
-      location.replace("/news");
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 
   async function loadMe() {

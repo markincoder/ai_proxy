@@ -66,11 +66,11 @@
         <span class="brand-mark" aria-hidden="true">II</span>
         <span>Proxy</span>
       </a>
-      <nav class="nav-links">${linksHtml}</nav>
-      <div class="nav-actions">
-        <span class="balance-pill" id="balance-wrap" hidden
+      <nav class="nav-links" aria-label="Разделы и баланс">
+        ${linksHtml}<span class="balance-pill" id="balance-wrap" hidden
           ><span class="balance-pill-pref" aria-hidden="true">Баланс&nbsp;</span><strong id="balance">—</strong></span
-        >
+        ></nav>
+      <div class="nav-actions">
         <button type="button" class="btn btn-accent" id="btn-pay" style="display: none">Пополнить</button>
         <a href="/login" class="btn btn-primary" id="nav-login" style="display: none">Войти</a>
         <button type="button" class="btn" id="btn-logout" title="Завершить сессию">Выйти</button>

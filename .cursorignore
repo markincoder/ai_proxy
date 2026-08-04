@@ -1,0 +1,64 @@
+# Secrets - block AI access completely
+.env
+.env.*
+!.env.example
+
+# Python / environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.tox/
+.coverage
+htmlcov/
+
+# Runtime data / databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Binaries / office / media
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.zip
+*.gz
+*.7z
+*.tar
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.pyd
+*.dll
+*.so
+*.exe
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+.cache/
+
+# Git
+.git/

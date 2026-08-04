@@ -32,6 +32,13 @@ _specs_cache: list[dict[str, object]] | None = None
 _embedding_specs_cache: list[dict[str, object]] | None = None
 
 
+def invalidate_specs_cache() -> None:
+    """Сброс кэша JSON-каталогов после записи default_model_specs.json."""
+    global _specs_cache, _embedding_specs_cache
+    _specs_cache = None
+    _embedding_specs_cache = None
+
+
 def _ensure_default_model_specs_file() -> None:
     path = _catalog_specs_path()
     if path.is_file():
@@ -632,6 +639,29 @@ def _drop_legacy_user_pii_columns(engine) -> None:
             continue
 
 
+def _ensure_chat_threads_updated_at_index(engine) -> None:
+    """Индекс по updated_at: модерация и выборка последних тредов без filesort по всей таблице."""
+    insp = inspect(engine)
+    if not insp.has_table("chat_threads"):
+        return
+    idx_names = {ix["name"] for ix in insp.get_indexes("chat_threads")}
+    if "ix_chat_threads_updated_at" in idx_names:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect in ("sqlite", "postgresql"):
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_chat_threads_updated_at "
+                    "ON chat_threads (updated_at)"
+                )
+            )
+        else:
+            conn.execute(
+                text("CREATE INDEX ix_chat_threads_updated_at ON chat_threads (updated_at)")
+            )
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_users_username_password_columns(engine)
@@ -643,6 +673,7 @@ def init_db() -> None:
     _sanitize_users_datetime_sentinels(engine)
     _ensure_ai_model_embedding_columns(engine)
     _drop_legacy_user_pii_columns(engine)
+    _ensure_chat_threads_updated_at_index(engine)
     specs = get_all_catalog_specs_ordered()
     with SessionLocal() as db:
         known = {row[0] for row in db.query(AiModel.slug).all()}
@@ -657,6 +688,12 @@ def init_db() -> None:
         apply_user_facing_from_specs(db, dry_run=False)
         _ensure_site_banner_row(db)
         db.commit()
+    try:
+        from .services.models_catalog_cache import invalidate_public_models_cache
+
+        invalidate_public_models_cache()
+    except Exception:
+        pass
 
 
 def _ensure_site_banner_row(db: Session) -> None:
