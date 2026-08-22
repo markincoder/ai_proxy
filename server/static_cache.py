@@ -46,4 +46,8 @@ class StaticCacheHeadersMiddleware(BaseHTTPMiddleware):
             resp.headers["Cache-Control"] = CACHE_STATIC_UNVERSIONED_MEDIA
             return resp
 
+        if path in ("/robots.txt", "/sitemap.xml"):
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+            return resp
+
         return resp

@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Согласие с условиями — II Proxy</title>
+    <meta name="description" content="Подтверждение пользовательского соглашения II Proxy." />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="canonical" href="https://iiproxy.ru/consent" />
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#2563eb" />
     <link rel="stylesheet" href="/static/css/style.css?v=91" />
   <!-- Yandex.Metrika counter -->
 <script type="text/javascript">
@@ -35,8 +40,8 @@
           <div class="login-consent-wrap" style="margin-top: 0">
             <label class="login-consent-row" for="terms-consent"
               ><input type="checkbox" id="terms-consent" required /><span class="login-consent-text"
-                >Согласен с&nbsp;<a href="/terms" target="_blank" rel="noopener noreferrer">условиями пользовательского соглашения</a>
-                и&nbsp;<a href="/privacy" target="_blank" rel="noopener noreferrer">Политикой конфиденциальности</a></span></label>
+                >Согласен с&nbsp;<a href="/terms" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">условиями пользовательского соглашения</a>
+                и&nbsp;<a href="/privacy" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Политикой конфиденциальности</a></span></label>
           </div>
           <p id="consent-err" class="login-banner-err" style="display: none; margin-top: 0.75rem"></p>
           <button type="submit" class="btn btn-primary login-submit" style="margin-top: 1rem">
@@ -120,6 +125,6 @@
         });
       })();
     </script>
-    <script src="/static/js/app-nav.js?v=11" defer></script>
+    <script src="/static/js/app-nav.js?v=12" defer></script>
   </body>
 </html>

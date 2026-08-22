@@ -74,10 +74,15 @@
   async function initAppNav() {
     const me = await loadMe();
 
+    const path = (location.pathname || "/").replace(/\/+$/, "") || "/";
+    // Документы оферты должны читаться до галочки на /consent — иначе страница
+    // вспыхивает и app-nav возвращает на форму согласия (похожа на логин).
+    const termsGateAllow =
+      path === "/consent" || path === "/terms" || path === "/privacy";
     if (me && me.guest !== true && me.termsAccepted === false) {
-      if (location.pathname !== "/consent") {
+      if (!termsGateAllow) {
         let dest = location.pathname + location.search;
-        if (location.pathname === "/login") dest = "/";
+        if (path === "/login") dest = "/";
         location.replace("/consent?next=" + encodeURIComponent(dest));
         return;
       }

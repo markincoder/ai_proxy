@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /settings
+Disallow: /consent
+Disallow: /api/
+Disallow: /v1/
+Disallow: /swagger
+Disallow: /redoc
+Disallow: /health
+
+Host: iiproxy.ru
+Sitemap: https://iiproxy.ru/sitemap.xml

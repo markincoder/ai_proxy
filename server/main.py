@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import json
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -112,6 +112,36 @@ def create_app() -> FastAPI:
             media_type="image/svg+xml",
         )
 
+    @app.get("/yandex_{code}.html", include_in_schema=False)
+    def yandex_webmaster_file(code: str):
+        """HTML-файл подтверждения Яндекс.Вебмастера в корне сайта."""
+        if not code.isalnum() or len(code) > 64:
+            raise HTTPException(status_code=404)
+        path = STATIC_DIR / f"yandex_{code}.html"
+        if not path.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(
+            path,
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots_txt():
+        return FileResponse(
+            STATIC_DIR / "robots.txt",
+            media_type="text/plain; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap_xml():
+        return FileResponse(
+            STATIC_DIR / "sitemap.xml",
+            media_type="application/xml",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     @app.get("/health")
     def health():
         """Живость процесса для балансировщика и мониторинга (БД не проверяется)."""
@@ -153,7 +183,7 @@ def create_app() -> FastAPI:
     @app.get("/docs")
     def docs_deprecated_redirect():
         """Раньше отдавалась отдельная HTML-страница; содержание перенесено на /developers."""
-        return RedirectResponse(url="/developers", status_code=307)
+        return RedirectResponse(url="/developers", status_code=301)
 
     @app.get("/developers")
     def developers_hub_page():
@@ -177,12 +207,12 @@ def create_app() -> FastAPI:
 
     @app.get("/account")
     def account_redirect():
-        return RedirectResponse(url="/settings", status_code=302)
+        return RedirectResponse(url="/settings", status_code=301)
 
     @app.get("/transcribe")
     def transcribe_redirect():
         """Раньше была отдельная страница; распознавание — в чате (вкладка «Транскрипция» в моделях)."""
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url="/", status_code=301)
 
     @app.get("/admin")
     def admin_page():
