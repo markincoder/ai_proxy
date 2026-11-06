@@ -4,10 +4,10 @@
 # fmt: off
 DEFAULT_FAVORITE_MODEL_SLUGS: tuple[str, ...] = (
     "openai/gpt-4o",
-    "google/gemini-2.5-flash",
-    "anthropic/claude-sonnet-4.6",
+    "google/gemini-3.8-flash",
+    "anthropic/claude-sonnet-5.5",
     "openai/gpt-5.5",
-    "deepseek/deepseek-chat-v3.1",
+    "deepseek/deepseek-v4.1-flash",
 )
 # fmt: on
 

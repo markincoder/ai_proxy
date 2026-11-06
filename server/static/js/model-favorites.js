@@ -9,10 +9,10 @@ export const FAVORITES_LS_KEY = "ai_proxy_favorite_slugs_v1";
 /** Ориентир по спросу; в UI попадут только slug, реально есть в GET /api/models */
 export const DEFAULT_FAVORITE_SLUGS = [
   "openai/gpt-4o",
-  "google/gemini-2.5-flash",
-  "anthropic/claude-sonnet-4.6",
+  "google/gemini-3.8-flash",
+  "anthropic/claude-sonnet-5.5",
   "openai/gpt-5.5",
-  "deepseek/deepseek-chat-v3.1",
+  "deepseek/deepseek-v4.1-flash",
 ];
 
 /** После loadMe: true — писать на сервер при переключении звезды. */

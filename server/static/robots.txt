@@ -3,11 +3,11 @@ Allow: /
 Disallow: /admin
 Disallow: /settings
 Disallow: /consent
+Disallow: /login
 Disallow: /api/
 Disallow: /v1/
 Disallow: /swagger
 Disallow: /redoc
 Disallow: /health
 
-Host: iiproxy.ru
 Sitemap: https://iiproxy.ru/sitemap.xml

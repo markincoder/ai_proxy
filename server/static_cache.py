@@ -42,7 +42,7 @@ class StaticCacheHeadersMiddleware(BaseHTTPMiddleware):
             resp.headers["Cache-Control"] = CACHE_STATIC_UNVERSIONED_MEDIA
             return resp
 
-        if path == "/favicon.ico":
+        if path in ("/favicon.ico", "/apple-touch-icon.png"):
             resp.headers["Cache-Control"] = CACHE_STATIC_UNVERSIONED_MEDIA
             return resp
 

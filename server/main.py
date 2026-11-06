@@ -106,10 +106,17 @@ def create_app() -> FastAPI:
 
     @app.get("/favicon.ico")
     def favicon_ico():
-        """Браузер всегда запрашивает /favicon.ico; отдаём SVG без отдельного .ico файла."""
+        """Браузер всегда запрашивает /favicon.ico."""
         return FileResponse(
-            STATIC_DIR / "favicon.svg",
-            media_type="image/svg+xml",
+            STATIC_DIR / "favicon.ico",
+            media_type="image/x-icon",
+        )
+
+    @app.get("/apple-touch-icon.png", include_in_schema=False)
+    def apple_touch_icon():
+        return FileResponse(
+            STATIC_DIR / "apple-touch-icon.png",
+            media_type="image/png",
         )
 
     @app.get("/yandex_{code}.html", include_in_schema=False)
